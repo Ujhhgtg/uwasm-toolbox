@@ -1,0 +1,15 @@
+{
+  "name": "uwasm-toolbox",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "uwasm_toolbox_bg.wasm",
+    "uwasm_toolbox.js",
+    "uwasm_toolbox.d.ts"
+  ],
+  "main": "uwasm_toolbox.js",
+  "types": "uwasm_toolbox.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
