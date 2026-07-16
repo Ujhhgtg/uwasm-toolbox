@@ -145,6 +145,7 @@ import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes, set
 let pendingFiles  = [];
 let outputResults = []; // { name, bytes, mime }
 let activeZone    = null; // drop zone currently showing a file list
+let addMode       = false; // true when the Add button triggered the file picker
 
 // ── Tab switching ─────────────────────────────────────────────────
 window.switchTab = function(tab) {
@@ -167,9 +168,22 @@ function parseRange(s) {
 
 // ── File ingestion ────────────────────────────────────────────────
 function ingestFiles(fileList, zoneEl) {
-  const arr = [...fileList].filter(f => f.name.toLowerCase().endsWith('.tgs'));
-  if (!arr.length) { alert('No .tgs files found in the selection.'); return; }
-  pendingFiles  = arr.map(f => ({ file: f, name: f.name }));
+  const incoming = [...fileList].filter(f => f.name.toLowerCase().endsWith('.tgs'));
+  if (!incoming.length) { addMode = false; alert('No .tgs files found in the selection.'); return; }
+
+  let arr;
+  if (addMode) {
+    // Merge: append files not already present (dedup by name + size)
+    addMode = false;
+    const seen = new Set(pendingFiles.map(p => p.file.name + ':' + p.file.size));
+    const novel = incoming.filter(f => !seen.has(f.name + ':' + f.size));
+    if (!novel.length) return;
+    arr = [...pendingFiles, ...novel.map(f => ({ file: f, name: f.name }))];
+  } else {
+    arr = incoming.map(f => ({ file: f, name: f.name }));
+  }
+
+  pendingFiles  = arr;
   outputResults = [];
   document.getElementById('results').innerHTML = '';
   document.getElementById('btn-dl-all').style.display = 'none';
@@ -177,10 +191,14 @@ function ingestFiles(fileList, zoneEl) {
     `${pendingFiles.length} file${pendingFiles.length > 1 ? 's' : ''} ready`);
   document.getElementById('btn-convert').disabled = false;
 
-  // Show selected file list in the active drop zone
   if (activeZone && activeZone !== zoneEl) resetDropZone(activeZone);
   activeZone = zoneEl;
-  showFileList(zoneEl, pendingFiles.map(p => p.file));
+
+  // Files zone gets an Add button; folder zone gets none
+  const isFilesZone = zoneEl.id === 'dz-files';
+  showFileList(zoneEl, pendingFiles.map(p => p.file), isFilesZone ? {
+    onAdd: () => { addMode = true; document.getElementById('input-files').click(); },
+  } : {});
 }
 
 const dzFiles  = document.getElementById('dz-files');
