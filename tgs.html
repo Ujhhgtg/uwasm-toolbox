@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TGS → GIF — µWasm Toolbox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="style.css" />
+  <!-- lottie-web (UMD) for Lottie frame rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"
+          integrity="sha512-jEnuDt6jfecCjthQAJ+ed0MTVA++5ZKmlUcmYGCYSP1p6P3CsE5g2TFgxpk9H5J5KUVP6J5q/J6UCoMBuADg=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+
+<nav class="topbar">
+  <a class="topbar-back" href="index.html">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M3.828 7H14v2H3.828l3.586 3.586L6 14 0 8l6-6 1.414 1.414L3.828 7z"/>
+    </svg>
+    Toolbox
+  </a>
+  <span class="topbar-sep"></span>
+  <span class="topbar-title">TGS → GIF Converter</span>
+</nav>
+
+<!-- Hidden canvas used for Lottie rendering -->
+<canvas id="render-canvas" style="display:none" aria-hidden="true"></canvas>
+
+<main class="page">
+  <header class="tool-header">
+    <div class="tool-header-icon">🎞️</div>
+    <div>
+      <h1>TGS → GIF Converter</h1>
+      <p>Convert Telegram animated stickers <code>.tgs</code> to animated GIF</p>
+    </div>
+  </header>
+
+  <!-- ── Input tabs ── -->
+  <div class="section-label">Input</div>
+  <div class="drop-tabs">
+    <button class="drop-tab active" id="tab-files"  onclick="switchTab('files')">📄 Files</button>
+    <button class="drop-tab"        id="tab-folder" onclick="switchTab('folder')">📁 Folder</button>
+  </div>
+
+  <!-- Files drop zone -->
+  <div class="drop-zone" id="dz-files">
+    <input type="file" id="input-files" multiple accept=".tgs" />
+    <div class="drop-zone-icon">🎞️</div>
+    <div class="drop-zone-label"><strong>Drop .tgs files here</strong> or click to browse</div>
+    <div class="drop-zone-hint">Supports multiple files</div>
+  </div>
+
+  <!-- Folder drop zone -->
+  <div class="drop-zone hidden" id="dz-folder">
+    <input type="file" id="input-folder" webkitdirectory />
+    <div class="drop-zone-icon">📁</div>
+    <div class="drop-zone-label"><strong>Drop a folder here</strong> or click to browse</div>
+    <div class="drop-zone-hint">All .tgs files inside will be listed</div>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ── Controls (mirrors tgs2gif.py CLI flags) ── -->
+  <div class="section-label">Options</div>
+
+  <div class="controls-grid">
+    <div class="ctrl">
+      <label for="opt-fps">FPS <span style="font-size:.75rem;font-weight:400">(–-fps, default 15)</span></label>
+      <input type="number" id="opt-fps" value="15" min="1" max="60" step="1" />
+    </div>
+    <div class="ctrl">
+      <label for="opt-width">Width px <span style="font-size:.75rem;font-weight:400">(–-width, default 512)</span></label>
+      <input type="number" id="opt-width" value="512" min="16" max="2048" step="8" />
+    </div>
+    <div class="ctrl">
+      <label for="opt-height">Height px <span style="font-size:.75rem;font-weight:400">(–-height, default 512)</span></label>
+      <input type="number" id="opt-height" value="512" min="16" max="2048" step="8" />
+    </div>
+    <div class="ctrl">
+      <label for="opt-max-frames">Max frames <span style="font-size:.75rem;font-weight:400">(–-max-frames, optional)</span></label>
+      <input type="number" id="opt-max-frames" placeholder="unlimited" min="1" max="9999" step="1" />
+    </div>
+    <div class="ctrl">
+      <label for="opt-frames">Frame range <span style="font-size:.75rem;font-weight:400">(–-frames, e.g. 30-90)</span></label>
+      <input type="text" id="opt-frames" placeholder="e.g. 30-90" />
+    </div>
+  </div>
+
+  <!-- ── Action ── -->
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-convert" disabled onclick="convertAll()">
+      ▶ Convert
+    </button>
+    <button class="btn btn-ghost" id="btn-clear" onclick="clearAll()">Clear</button>
+    <button class="btn btn-ghost" id="btn-download-all" style="display:none" onclick="downloadAll()">
+      ⬇ Download all
+    </button>
+  </div>
+
+  <div class="status-bar idle" id="status-bar">○ <span>No files loaded</span></div>
+
+  <!-- ── Results ── -->
+  <div class="results" id="results"></div>
+</main>
+
+<script type="module">
+import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes, setStatus, setupDropZone } from './common.js';
+
+// ── State ────────────────────────────────────────────────────────
+let pendingFiles = [];
+let gifResults   = []; // {name, bytes}
+
+// ── Tab switching ────────────────────────────────────────────────
+window.switchTab = function(tab) {
+  document.getElementById('tab-files').classList.toggle('active',  tab === 'files');
+  document.getElementById('tab-folder').classList.toggle('active', tab === 'folder');
+  document.getElementById('dz-files').classList.toggle('hidden',   tab !== 'files');
+  document.getElementById('dz-folder').classList.toggle('hidden',  tab !== 'folder');
+};
+
+// ── Frame range parsing (mirrors Python's parse_range) ────────────
+function parseRange(s) {
+  if (!s || !s.trim()) return null;
+  const parts = s.trim().split('-');
+  if (parts.length === 1) { const v = parseInt(parts[0]); return [v, v + 1]; }
+  if (parts.length === 2) {
+    const lo = parts[0] ? parseInt(parts[0]) : 0;
+    const hi = parts[1] ? parseInt(parts[1]) : 999999;
+    return [lo, hi];
+  }
+  return null;
+}
+
+// ── File ingestion ────────────────────────────────────────────────
+function ingestFiles(fileList) {
+  const arr = [...fileList].filter(f => f.name.toLowerCase().endsWith('.tgs'));
+  if (!arr.length) { alert('No .tgs files found in the selection.'); return; }
+  pendingFiles = arr.map(f => ({ file: f, name: f.name }));
+  gifResults = [];
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('btn-download-all').style.display = 'none';
+  setStatus(document.getElementById('status-bar'), 'idle',
+    `${pendingFiles.length} file${pendingFiles.length > 1 ? 's' : ''} ready`);
+  document.getElementById('btn-convert').disabled = false;
+}
+
+setupDropZone(document.getElementById('dz-files'),  f => ingestFiles(f));
+setupDropZone(document.getElementById('dz-folder'), f => ingestFiles(f));
+document.getElementById('input-files').addEventListener('change',  e => ingestFiles(e.target.files));
+document.getElementById('input-folder').addEventListener('change', e => ingestFiles(e.target.files));
+
+// ── Core: render one TGS to GIF bytes ────────────────────────────
+
+/**
+ * Render a TGS JSON string to an animated GIF using lottie-web + WASM.
+ *
+ * @param {string}      lottiJson  Lottie animation JSON string
+ * @param {object}      opts       { fps, width, height, maxFrames, range }
+ * @param {HTMLElement} progEl     Element whose progress bar fill to update
+ * @returns {Uint8Array} GIF file bytes
+ */
+async function renderToGif(lottieJson, opts, progEl) {
+  const { fps, width, height, maxFrames, range } = opts;
+
+  // Parse the JSON to inspect animation metadata
+  const animData = JSON.parse(lottieJson);
+  const animFps   = animData.fr || 30;     // animation's native frame rate
+  const outPoint  = animData.op || 60;     // last frame index
+
+  // Compute which frames to render (same logic as the Python script)
+  const step = Math.max(1, Math.round(animFps / fps));
+  const outputFps = animFps / step;
+  const delayCentisec = Math.max(1, Math.round(100 / outputFps));
+
+  let frames = [];
+  for (let f = 0; f < outPoint; f += step) frames.push(f);
+
+  // Apply --frames range filter
+  if (range) {
+    const [lo, hi] = range;
+    frames = frames.filter(f => f >= lo && f < hi);
+  }
+
+  // Apply --max-frames uniform subsampling
+  if (maxFrames && frames.length > maxFrames) {
+    const keep = Math.max(1, maxFrames);
+    const step2 = Math.max(1, Math.floor(frames.length / keep));
+    frames = frames.filter((_, i) => i % step2 === 0).slice(0, keep);
+  }
+
+  if (!frames.length) throw new Error('No frames to render (check frame range / max-frames)');
+
+  // Set up offscreen canvas
+  const canvas = document.getElementById('render-canvas');
+  canvas.width  = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  // Load lottie animation into the canvas
+  const container = document.createElement('div');
+  container.style.cssText = `position:absolute;left:-9999px;width:${width}px;height:${height}px`;
+  document.body.appendChild(container);
+
+  const anim = lottie.loadAnimation({
+    container,
+    renderer: 'canvas',
+    loop: false,
+    autoplay: false,
+    animationData: animData,
+    rendererSettings: {
+      canvas,
+      clearCanvas: true,
+      preserveAspectRatio: 'xMidYMid meet',
+      progressiveLoad: false,
+    },
+  });
+
+  await new Promise((resolve, reject) => {
+    anim.addEventListener('DOMLoaded', resolve);
+    anim.addEventListener('error', reject);
+    setTimeout(reject, 5000); // timeout guard
+  });
+
+  // Collect RGBA pixels for each frame
+  const frameCount  = frames.length;
+  const pixelsPerFrame = width * height * 4;
+  const allFrames   = new Uint8Array(frameCount * pixelsPerFrame);
+
+  for (let i = 0; i < frameCount; i++) {
+    anim.goToAndStop(frames[i], true);
+    // Let lottie flush to canvas
+    await microtask();
+    const imageData = ctx.getImageData(0, 0, width, height);
+    allFrames.set(imageData.data, i * pixelsPerFrame);
+
+    if (progEl) {
+      const pct = Math.round(((i + 1) / frameCount) * 100);
+      progEl.style.width = pct + '%';
+    }
+  }
+
+  anim.destroy();
+  container.remove();
+
+  // Encode via WASM
+  const mod = wasm();
+  const gifBytes = mod.tgs_encode_gif(allFrames, width, height, frameCount, delayCentisec);
+  return gifBytes;
+}
+
+/** Yield to the microtask queue so the canvas rendering flushes. */
+function microtask() {
+  return new Promise(r => setTimeout(r, 0));
+}
+
+// ── Batch conversion ─────────────────────────────────────────────
+window.convertAll = async function() {
+  const statusEl  = document.getElementById('status-bar');
+  const resultsEl = document.getElementById('results');
+
+  const fps       = Math.max(1, parseInt(document.getElementById('opt-fps').value)     || 15);
+  const width     = Math.max(16, parseInt(document.getElementById('opt-width').value)  || 512);
+  const height    = Math.max(16, parseInt(document.getElementById('opt-height').value) || 512);
+  const maxFrames = parseInt(document.getElementById('opt-max-frames').value) || null;
+  const range     = parseRange(document.getElementById('opt-frames').value);
+
+  document.getElementById('btn-convert').disabled = true;
+  resultsEl.innerHTML = '';
+  gifResults = [];
+
+  setStatus(statusEl, 'busy', 'Initialising WASM…');
+  let mod;
+  try { mod = await initWasm(); }
+  catch(e) {
+    setStatus(statusEl, 'failed', `WASM load failed: ${e.message}`);
+    document.getElementById('btn-convert').disabled = false;
+    return;
+  }
+
+  let done = 0, failed = 0;
+
+  for (const item of pendingFiles) {
+    setStatus(statusEl, 'busy',
+      `Converting ${done + failed + 1}/${pendingFiles.length}: ${item.name}`);
+
+    // Create result card with progress bar
+    const cardId = `res-${done + failed}`;
+    const card = document.createElement('div');
+    card.className = 'result-item pending';
+    card.id = cardId;
+    card.innerHTML = `
+      <div class="result-icon">⏳</div>
+      <div class="result-body" style="width:100%">
+        <div class="result-name">${esc(item.name)}</div>
+        <div class="result-sub">Rendering frames…</div>
+        <div class="tgs-preview">
+          <div class="progress-bar-wrap" style="width:100%;margin-top:.4rem">
+            <div class="progress-bar-fill" id="prog-${cardId}" style="width:0%"></div>
+          </div>
+        </div>
+      </div>`;
+    resultsEl.appendChild(card);
+
+    try {
+      const bytes      = await readFileBytes(item.file);
+      const lottieJson = mod.tgs_decompress(bytes);
+
+      const progEl = document.getElementById(`prog-${cardId}`);
+      const gifBytes = await renderToGif(lottieJson, { fps, width, height, maxFrames, range }, progEl);
+
+      const outName = replaceExt(item.name, 'gif');
+      gifResults.push({ name: outName, bytes: gifBytes });
+
+      // Build a data URL for preview thumbnail
+      const blob    = new Blob([gifBytes], { type: 'image/gif' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      card.className = 'result-item success';
+      card.innerHTML = `
+        <div class="result-icon">✅</div>
+        <div class="result-body">
+          <div class="result-name">${esc(outName)}</div>
+          <div class="result-sub">${fmtBytes(gifBytes.length)} · ${width}×${height} · ${fps} fps</div>
+          <div class="tgs-preview" style="margin-top:.5rem">
+            <img src="${blobUrl}" alt="preview" style="max-width:96px;border-radius:8px" />
+          </div>
+        </div>
+        <div class="result-actions">
+          <button class="btn btn-ghost" onclick="dlOne(${gifResults.length - 1})">⬇ Download</button>
+        </div>`;
+
+      done++;
+    } catch(e) {
+      card.className = 'result-item error';
+      card.innerHTML = `
+        <div class="result-icon">❌</div>
+        <div class="result-body">
+          <div class="result-name">${esc(item.name)}</div>
+          <div class="result-sub">${esc(String(e))}</div>
+        </div>`;
+      failed++;
+    }
+  }
+
+  const msg = failed
+    ? `Done: ${done} converted, ${failed} failed`
+    : `Done: ${done} file${done > 1 ? 's' : ''} converted`;
+  setStatus(statusEl, failed ? 'failed' : 'done', msg);
+  document.getElementById('btn-convert').disabled = false;
+  if (gifResults.length > 1) document.getElementById('btn-download-all').style.display = '';
+};
+
+// ── Download helpers ──────────────────────────────────────────────
+window.dlOne = function(idx) {
+  const r = gifResults[idx];
+  if (r) downloadBytes(r.bytes, r.name, 'image/gif');
+};
+window.downloadAll = function() {
+  gifResults.forEach(r => downloadBytes(r.bytes, r.name, 'image/gif'));
+};
+window.clearAll = function() {
+  pendingFiles = [];
+  gifResults   = [];
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('btn-convert').disabled = true;
+  document.getElementById('btn-download-all').style.display = 'none';
+  document.getElementById('input-files').value = '';
+  document.getElementById('input-folder').value = '';
+  setStatus(document.getElementById('status-bar'), 'idle', 'No files loaded');
+};
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
