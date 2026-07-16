@@ -87,13 +87,16 @@ export function setupDropZone(zone, onFiles) {
  *   <div class="dz-list hidden"></div>
  *
  * The hidden file <input> inside the zone is temporarily removed from the
- * pointer-event flow so random clicks don't reopen the picker; the "Change"
- * button re-triggers it explicitly.
+ * pointer-event flow so random clicks don't reopen the picker.
  *
- * @param {HTMLElement}  zone   The .drop-zone element
- * @param {File[]}       files  Array of File objects to list
+ * @param {HTMLElement}  zone      The .drop-zone element
+ * @param {File[]}       files     Array of File objects to list
+ * @param {object}       [opts]
+ * @param {function}     [opts.onAdd]  If provided, an "Add" button is shown
+ *                                     that calls this function when clicked.
+ *                                     Omit for folder mode (no button).
  */
-export function showFileList(zone, files) {
+export function showFileList(zone, files, { onAdd } = {}) {
   const prompt = zone.querySelector('.dz-prompt');
   const list   = zone.querySelector('.dz-list');
   const input  = zone.querySelector('input[type="file"]');
@@ -108,10 +111,14 @@ export function showFileList(zone, files) {
   const escHtml = s => String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+  const btnHtml = onAdd
+    ? `<button class="dz-change-btn">+ Add</button>`
+    : '';
+
   list.innerHTML = `
     <div class="dz-list-header">
       <span>${files.length} file${files.length !== 1 ? 's' : ''} selected</span>
-      <button class="dz-change-btn">Change</button>
+      ${btnHtml}
     </div>
     <ul class="dz-file-list">
       ${files.map(f => `
@@ -121,9 +128,9 @@ export function showFileList(zone, files) {
         </li>`).join('')}
     </ul>`;
 
-  list.querySelector('.dz-change-btn').addEventListener('click', () => {
-    if (input) input.click();
-  });
+  if (onAdd) {
+    list.querySelector('.dz-change-btn').addEventListener('click', onAdd);
+  }
 }
 
 /**
