@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NCM Converter — µWasm Toolbox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<nav class="topbar">
+  <a class="topbar-back" href="index.html">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M3.828 7H14v2H3.828l3.586 3.586L6 14 0 8l6-6 1.414 1.414L3.828 7z"/>
+    </svg>
+    Toolbox
+  </a>
+  <span class="topbar-sep"></span>
+  <span class="topbar-title">NCM Converter</span>
+</nav>
+
+<main class="page">
+  <header class="tool-header">
+    <div class="tool-header-icon">🎵</div>
+    <div>
+      <h1>NCM Converter</h1>
+      <p>Decrypt Netease Cloud Music <code>.ncm</code> files → FLAC or MP3</p>
+    </div>
+  </header>
+
+  <!-- ── Input tabs ── -->
+  <div class="section-label">Input</div>
+  <div class="drop-tabs">
+    <button class="drop-tab active" id="tab-files" onclick="switchTab('files')">📄 Files</button>
+    <button class="drop-tab"        id="tab-folder" onclick="switchTab('folder')">📁 Folder</button>
+  </div>
+
+  <!-- Files drop zone -->
+  <div class="drop-zone" id="dz-files">
+    <input type="file" id="input-files" multiple accept=".ncm" />
+    <div class="drop-zone-icon">🎵</div>
+    <div class="drop-zone-label"><strong>Drop .ncm files here</strong> or click to browse</div>
+    <div class="drop-zone-hint">Supports multiple files</div>
+  </div>
+
+  <!-- Folder drop zone (hidden by default) -->
+  <div class="drop-zone hidden" id="dz-folder">
+    <input type="file" id="input-folder" webkitdirectory />
+    <div class="drop-zone-icon">📁</div>
+    <div class="drop-zone-label"><strong>Drop a folder here</strong> or click to browse</div>
+    <div class="drop-zone-hint">All .ncm files inside will be listed</div>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ── Controls (mirrors ncmx CLI flags) ── -->
+  <div class="section-label">Options</div>
+
+  <div class="controls-grid">
+    <div class="ctrl">
+      <label for="opt-outdir">Output directory name</label>
+      <input type="text" id="opt-outdir" placeholder="same as input (downloads)"
+             title="When set, downloaded files use this as a subfolder prefix in the filename" />
+    </div>
+  </div>
+
+  <div style="margin-top:1rem; display:flex; flex-direction:column; gap:.6rem;">
+    <div class="toggle-row">
+      <label class="toggle" for="opt-recursive">
+        <input type="checkbox" id="opt-recursive" />
+        <span class="toggle-track"></span>
+        <span class="toggle-knob"></span>
+      </label>
+      <label for="opt-recursive">Recursive <span style="color:var(--text-2);font-size:.8rem">(–r · include subdirectories)</span></label>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle" for="opt-metadata">
+        <input type="checkbox" id="opt-metadata" checked />
+        <span class="toggle-track"></span>
+        <span class="toggle-knob"></span>
+      </label>
+      <label for="opt-metadata">Show metadata &amp; cover art</label>
+    </div>
+  </div>
+
+  <!-- ── Action ── -->
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-convert" disabled onclick="convertAll()">
+      ▶ Convert
+    </button>
+    <button class="btn btn-ghost" id="btn-clear" onclick="clearAll()">Clear</button>
+    <button class="btn btn-ghost" id="btn-download-all" style="display:none" onclick="downloadAll()">
+      ⬇ Download all
+    </button>
+  </div>
+
+  <div class="status-bar idle" id="status-bar">○ <span>No files loaded</span></div>
+
+  <!-- ── Results ── -->
+  <div class="results" id="results"></div>
+</main>
+
+<script type="module">
+import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes, fmtDuration, setStatus, setupDropZone } from './common.js';
+
+// ── State ────────────────────────────────────────────────────────
+let pendingFiles = []; // {file, name, relativePath}
+let results      = []; // {file, name, result|error}
+
+// ── Tab switching ────────────────────────────────────────────────
+window.switchTab = function(tab) {
+  document.getElementById('tab-files').classList.toggle('active',  tab === 'files');
+  document.getElementById('tab-folder').classList.toggle('active', tab === 'folder');
+  document.getElementById('dz-files').classList.toggle('hidden',   tab !== 'files');
+  document.getElementById('dz-folder').classList.toggle('hidden',  tab !== 'folder');
+};
+
+// ── File ingestion ────────────────────────────────────────────────
+function ingestFiles(fileList) {
+  const recursive = document.getElementById('opt-recursive').checked;
+  const arr = [...fileList].filter(f => {
+    if (!f.name.toLowerCase().endsWith('.ncm')) return false;
+    // When not recursive, skip files nested deeper than one level
+    const parts = (f.webkitRelativePath || f.name).split('/');
+    if (!recursive && parts.length > 2) return false;
+    return true;
+  });
+  if (!arr.length) { alert('No .ncm files found in the selection.'); return; }
+  pendingFiles = arr.map(f => ({
+    file: f,
+    name: f.name,
+    relativePath: f.webkitRelativePath || f.name,
+  }));
+  results = [];
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('btn-download-all').style.display = 'none';
+  setStatus(document.getElementById('status-bar'), 'idle',
+    `${pendingFiles.length} file${pendingFiles.length > 1 ? 's' : ''} ready`);
+  document.getElementById('btn-convert').disabled = false;
+}
+
+setupDropZone(document.getElementById('dz-files'),  f => ingestFiles(f));
+setupDropZone(document.getElementById('dz-folder'), f => ingestFiles(f));
+document.getElementById('input-files').addEventListener('change',  e => ingestFiles(e.target.files));
+document.getElementById('input-folder').addEventListener('change', e => ingestFiles(e.target.files));
+
+// ── Conversion ───────────────────────────────────────────────────
+window.convertAll = async function() {
+  const statusEl = document.getElementById('status-bar');
+  const resultsEl = document.getElementById('results');
+  const showMeta = document.getElementById('opt-metadata').checked;
+
+  document.getElementById('btn-convert').disabled = true;
+  resultsEl.innerHTML = '';
+  results = [];
+
+  // Pre-load WASM
+  setStatus(statusEl, 'busy', 'Initialising WASM…');
+  let mod;
+  try { mod = await initWasm(); }
+  catch(e) {
+    setStatus(statusEl, 'failed', `WASM load failed: ${e.message}`);
+    document.getElementById('btn-convert').disabled = false;
+    return;
+  }
+
+  let done = 0, failed = 0;
+
+  for (const item of pendingFiles) {
+    setStatus(statusEl, 'busy',
+      `Converting ${done + 1}/${pendingFiles.length}: ${item.name}`);
+
+    const card = document.createElement('div');
+    card.className = 'result-item pending';
+    card.id = `res-${done}`;
+    card.innerHTML = `
+      <div class="result-icon">⏳</div>
+      <div class="result-body">
+        <div class="result-name">${item.name}</div>
+        <div class="result-sub">Converting…</div>
+      </div>`;
+    resultsEl.appendChild(card);
+
+    try {
+      const bytes = await readFileBytes(item.file);
+      const ncmResult = mod.ncm_convert(bytes);
+
+      const fmt    = ncmResult.format;
+      const audio  = ncmResult.audio;
+      const cover  = ncmResult.cover;
+      const mime   = ncmResult.cover_mime;
+      const metaRaw = ncmResult.metadata_json;
+      const meta   = metaRaw ? JSON.parse(metaRaw) : null;
+
+      const outName = replaceExt(item.name, fmt);
+      const audioMime = fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
+
+      results.push({ name: outName, bytes: audio, mime: audioMime });
+
+      let metaHtml = '';
+      if (showMeta && meta) {
+        const coverHtml = cover.length
+          ? `<img class="meta-cover" src="${blobUrl(cover, mime)}" alt="cover" />`
+          : `<div class="meta-cover-placeholder">🎵</div>`;
+
+        const badges = [
+          meta.format ? `<span class="badge badge-format">${meta.format.toUpperCase()}</span>` : '',
+          meta.bitrate ? `<span class="badge badge-bitrate">${(meta.bitrate/1000).toFixed(0)} kbps</span>` : '',
+          meta.duration ? `<span class="badge badge-dur">${fmtDuration(meta.duration)}</span>` : '',
+        ].filter(Boolean).join('');
+
+        metaHtml = `
+          <div class="meta-card">
+            ${coverHtml}
+            <div class="meta-info">
+              <div class="meta-title">${esc(meta.name || outName)}</div>
+              <div class="meta-artist">${esc(meta.artist || '—')}</div>
+              <div class="meta-album">${esc(meta.album || '')}</div>
+              <div class="meta-badges">${badges}</div>
+            </div>
+          </div>`;
+      }
+
+      card.className = 'result-item success';
+      card.innerHTML = `
+        <div class="result-icon">✅</div>
+        <div class="result-body">
+          <div class="result-name">${outName}</div>
+          <div class="result-sub">${fmtBytes(audio.length)} · ${fmt.toUpperCase()}</div>
+          ${metaHtml}
+        </div>
+        <div class="result-actions">
+          <button class="btn btn-ghost" onclick="dlOne(${results.length - 1})">⬇ Download</button>
+        </div>`;
+
+      done++;
+    } catch(e) {
+      card.className = 'result-item error';
+      card.innerHTML = `
+        <div class="result-icon">❌</div>
+        <div class="result-body">
+          <div class="result-name">${item.name}</div>
+          <div class="result-sub">${esc(String(e))}</div>
+        </div>`;
+      failed++;
+    }
+  }
+
+  const msg = failed
+    ? `Done: ${done} converted, ${failed} failed`
+    : `Done: ${done} file${done > 1 ? 's' : ''} converted`;
+  setStatus(statusEl, failed ? 'failed' : 'done', msg);
+
+  document.getElementById('btn-convert').disabled = false;
+  if (results.length > 1) document.getElementById('btn-download-all').style.display = '';
+};
+
+// ── Download helpers ──────────────────────────────────────────────
+window.dlOne = function(idx) {
+  const r = results[idx];
+  if (r) downloadBytes(r.bytes, r.name, r.mime);
+};
+
+window.downloadAll = function() {
+  results.forEach(r => downloadBytes(r.bytes, r.name, r.mime));
+};
+
+window.clearAll = function() {
+  pendingFiles = [];
+  results = [];
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('btn-convert').disabled = true;
+  document.getElementById('btn-download-all').style.display = 'none';
+  document.getElementById('input-files').value = '';
+  document.getElementById('input-folder').value = '';
+  setStatus(document.getElementById('status-bar'), 'idle', 'No files loaded');
+};
+
+// ── Utilities ─────────────────────────────────────────────────────
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function blobUrl(bytes, mime) {
+  return URL.createObjectURL(new Blob([bytes], { type: mime }));
+}
+</script>
+</body>
+</html>

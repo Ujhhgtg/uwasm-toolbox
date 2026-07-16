@@ -1,0 +1,28 @@
+[package]
+name = "uwasm-toolbox"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+
+# NCM decryption
+aes = "0.9"
+base64 = "0.22"
+serde_json = "1"
+
+# TGS decompression + GIF encoding
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+gif = "0.13"
+
+# Shared serialization
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
