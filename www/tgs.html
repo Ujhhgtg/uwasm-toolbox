@@ -7,9 +7,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="style.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"
-          integrity="sha512-jEnuDt6jfecCjthQAJ+ed0MTVA++5ZKmlUcmYGCYSP1p6P3CsE5g2TFgxpk9H5J5KUVP6J5q/J6UCoMBuADg=="
-          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     .fmt-group {
       display: flex;
@@ -139,6 +136,7 @@
 </main>
 
 <script type="module">
+import lottie from 'https://esm.sh/lottie-web@5.12.2';
 import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes, setStatus, setupDropZone, showFileList, resetDropZone } from './common.js';
 
 // ── State ─────────────────────────────────────────────────────────
