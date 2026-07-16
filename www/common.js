@@ -79,6 +79,66 @@ export function setupDropZone(zone, onFiles) {
   });
 }
 
+/**
+ * Replace a drop zone's prompt with a scrollable list of selected files.
+ *
+ * Requires the drop zone to contain:
+ *   <div class="dz-prompt">…icon/label/hint…</div>
+ *   <div class="dz-list hidden"></div>
+ *
+ * The hidden file <input> inside the zone is temporarily removed from the
+ * pointer-event flow so random clicks don't reopen the picker; the "Change"
+ * button re-triggers it explicitly.
+ *
+ * @param {HTMLElement}  zone   The .drop-zone element
+ * @param {File[]}       files  Array of File objects to list
+ */
+export function showFileList(zone, files) {
+  const prompt = zone.querySelector('.dz-prompt');
+  const list   = zone.querySelector('.dz-list');
+  const input  = zone.querySelector('input[type="file"]');
+  if (!prompt || !list) return;
+
+  // Hide the invisible input overlay so clicks on the list aren't swallowed
+  if (input) input.style.display = 'none';
+
+  prompt.classList.add('hidden');
+  list.classList.remove('hidden');
+
+  const escHtml = s => String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  list.innerHTML = `
+    <div class="dz-list-header">
+      <span>${files.length} file${files.length !== 1 ? 's' : ''} selected</span>
+      <button class="dz-change-btn">Change</button>
+    </div>
+    <ul class="dz-file-list">
+      ${files.map(f => `
+        <li class="dz-file-row">
+          <span class="dz-file-name">${escHtml(f.name)}</span>
+          <span class="dz-file-size">${fmtBytes(f.size)}</span>
+        </li>`).join('')}
+    </ul>`;
+
+  list.querySelector('.dz-change-btn').addEventListener('click', () => {
+    if (input) input.click();
+  });
+}
+
+/**
+ * Restore a drop zone to its empty/prompt state.
+ * @param {HTMLElement} zone
+ */
+export function resetDropZone(zone) {
+  const prompt = zone.querySelector('.dz-prompt');
+  const list   = zone.querySelector('.dz-list');
+  const input  = zone.querySelector('input[type="file"]');
+  if (prompt) prompt.classList.remove('hidden');
+  if (list)   { list.classList.add('hidden'); list.innerHTML = ''; }
+  if (input)  input.style.display = '';
+}
+
 // ── Status bar helper ──────────────────────────────────────────────
 
 /**
