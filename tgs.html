@@ -70,16 +70,22 @@
 
   <div class="drop-zone" id="dz-files">
     <input type="file" id="input-files" multiple accept=".tgs" />
-    <div class="drop-zone-icon">🎞️</div>
-    <div class="drop-zone-label"><strong>Drop .tgs files here</strong> or click to browse</div>
-    <div class="drop-zone-hint">Supports multiple files</div>
+    <div class="dz-prompt">
+      <div class="drop-zone-icon">🎞️</div>
+      <div class="drop-zone-label"><strong>Drop .tgs files here</strong> or click to browse</div>
+      <div class="drop-zone-hint">Supports multiple files</div>
+    </div>
+    <div class="dz-list hidden"></div>
   </div>
 
   <div class="drop-zone hidden" id="dz-folder">
     <input type="file" id="input-folder" webkitdirectory />
-    <div class="drop-zone-icon">📁</div>
-    <div class="drop-zone-label"><strong>Drop a folder here</strong> or click to browse</div>
-    <div class="drop-zone-hint">All .tgs files inside will be listed</div>
+    <div class="dz-prompt">
+      <div class="drop-zone-icon">📁</div>
+      <div class="drop-zone-label"><strong>Drop a folder here</strong> or click to browse</div>
+      <div class="drop-zone-hint">All .tgs files inside will be listed</div>
+    </div>
+    <div class="dz-list hidden"></div>
   </div>
 
   <hr class="divider" />
@@ -133,11 +139,12 @@
 </main>
 
 <script type="module">
-import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes, setStatus, setupDropZone } from './common.js';
+import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes, setStatus, setupDropZone, showFileList, resetDropZone } from './common.js';
 
 // ── State ─────────────────────────────────────────────────────────
 let pendingFiles  = [];
 let outputResults = []; // { name, bytes, mime }
+let activeZone    = null; // drop zone currently showing a file list
 
 // ── Tab switching ─────────────────────────────────────────────────
 window.switchTab = function(tab) {
@@ -159,7 +166,7 @@ function parseRange(s) {
 }
 
 // ── File ingestion ────────────────────────────────────────────────
-function ingestFiles(fileList) {
+function ingestFiles(fileList, zoneEl) {
   const arr = [...fileList].filter(f => f.name.toLowerCase().endsWith('.tgs'));
   if (!arr.length) { alert('No .tgs files found in the selection.'); return; }
   pendingFiles  = arr.map(f => ({ file: f, name: f.name }));
@@ -169,12 +176,19 @@ function ingestFiles(fileList) {
   setStatus(document.getElementById('status-bar'), 'idle',
     `${pendingFiles.length} file${pendingFiles.length > 1 ? 's' : ''} ready`);
   document.getElementById('btn-convert').disabled = false;
+
+  // Show selected file list in the active drop zone
+  if (activeZone && activeZone !== zoneEl) resetDropZone(activeZone);
+  activeZone = zoneEl;
+  showFileList(zoneEl, pendingFiles.map(p => p.file));
 }
 
-setupDropZone(document.getElementById('dz-files'),  f => ingestFiles(f));
-setupDropZone(document.getElementById('dz-folder'), f => ingestFiles(f));
-document.getElementById('input-files').addEventListener('change',  e => ingestFiles(e.target.files));
-document.getElementById('input-folder').addEventListener('change', e => ingestFiles(e.target.files));
+const dzFiles  = document.getElementById('dz-files');
+const dzFolder = document.getElementById('dz-folder');
+setupDropZone(dzFiles,  f => ingestFiles(f, dzFiles));
+setupDropZone(dzFolder, f => ingestFiles(f, dzFolder));
+document.getElementById('input-files').addEventListener('change',  e => ingestFiles(e.target.files, dzFiles));
+document.getElementById('input-folder').addEventListener('change', e => ingestFiles(e.target.files, dzFolder));
 
 // ── Lottie frame sampler ──────────────────────────────────────────
 
@@ -510,6 +524,7 @@ window.clearAll = function() {
   document.getElementById('btn-dl-all').style.display = 'none';
   document.getElementById('input-files').value = '';
   document.getElementById('input-folder').value = '';
+  if (activeZone) { resetDropZone(activeZone); activeZone = null; }
   setStatus(document.getElementById('status-bar'), 'idle', 'No files loaded');
 };
 

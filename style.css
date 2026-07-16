@@ -185,6 +185,65 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .drop-zone-label strong { color: var(--text); }
 .drop-zone-hint { font-size: .78rem; color: var(--text-2); margin-top: .35rem; opacity: .7; }
 
+/* File list shown inside drop zone after selection */
+.dz-list {
+  width: 100%;
+  text-align: left;
+}
+.dz-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .6rem;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.dz-change-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-2);
+  font-size: .75rem;
+  padding: .2rem .6rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.dz-change-btn:hover { border-color: var(--accent); color: var(--accent-h); }
+.dz-file-list {
+  list-style: none;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.dz-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .3rem .6rem;
+  border-radius: 6px;
+  background: var(--bg-3);
+  font-size: .8rem;
+}
+.dz-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  min-width: 0;
+}
+.dz-file-size {
+  flex-shrink: 0;
+  color: var(--text-2);
+  font-size: .72rem;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Drop tabs (file vs folder) */
 .drop-tabs {
   display: flex;
