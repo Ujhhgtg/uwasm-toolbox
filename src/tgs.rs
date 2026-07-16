@@ -5,12 +5,25 @@ use std::io::Read;
 // TGS decompression
 // ---------------------------------------------------------------------------
 
-/// Decompress a .tgs file (gzip'd Lottie JSON) and return the JSON string.
+/// Decompress a .tgs file and return the Lottie JSON string.
+///
+/// Accepts both the standard gzip-compressed format and plain UTF-8 JSON
+/// (some clients export .tgs files without compression).
 pub fn decompress(data: &[u8]) -> Result<String, String> {
-    let mut decoder = GzDecoder::new(data);
-    let mut json = String::new();
-    decoder.read_to_string(&mut json).map_err(|e| format!("gzip decompress failed: {e}"))?;
-    Ok(json)
+    // Gzip magic bytes: 0x1F 0x8B
+    if data.starts_with(&[0x1F, 0x8B]) {
+        let mut decoder = GzDecoder::new(data);
+        let mut json = String::new();
+        decoder
+            .read_to_string(&mut json)
+            .map_err(|e| format!("gzip decompress failed: {e}"))?;
+        Ok(json)
+    } else {
+        // Fall back to plain UTF-8 JSON
+        std::str::from_utf8(data)
+            .map(|s| s.to_owned())
+            .map_err(|_| "not a valid gzip stream or UTF-8 JSON".to_string())
+    }
 }
 
 // ---------------------------------------------------------------------------
