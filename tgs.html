@@ -47,7 +47,7 @@
 </nav>
 
 <!-- Hidden canvas used for Lottie rendering -->
-<canvas id="render-canvas" style="display:none" aria-hidden="true"></canvas>
+<canvas id="render-canvas" style="position:fixed;left:-9999px;top:-9999px;pointer-events:none" aria-hidden="true"></canvas>
 
 <main class="page">
   <header class="tool-header">
@@ -365,14 +365,30 @@ function muxAnimatedWebP(frameWebPs, width, height, delayMs) {
   }
 
   // ── Extract frame bitstream from a single-frame WebP ─────────────
-  // A static WebP file is: RIFF(4) size(4) WEBP(4) [chunks...]
-  // We want everything after the 12-byte file header as the ANMF payload.
+  // ANMF frame data must be: optional ALPH + VP8 or VP8L chunk(s).
+  // canvas.toBlob often returns extended WebP (RIFF WEBP VP8X …),
+  // so we walk the chunk list and collect only ALPH / VP8 / VP8L,
+  // skipping the VP8X wrapper which is invalid inside ANMF.
   function extractFrameData(webpBytes) {
-    // Verify RIFF + WEBP magic
     const sig = String.fromCharCode(...webpBytes.slice(0, 4));
     const fmt = String.fromCharCode(...webpBytes.slice(8, 12));
     if (sig !== 'RIFF' || fmt !== 'WEBP') throw new Error('Invalid WebP from toBlob');
-    return webpBytes.slice(12); // VP8/VP8L/VP8X chunk(s)
+
+    const view = new DataView(webpBytes.buffer, webpBytes.byteOffset, webpBytes.byteLength);
+    const wanted = new Set(['VP8 ', 'VP8L', 'ALPH']);
+    const parts = [];
+    let offset = 12; // skip RIFF(4) + size(4) + WEBP(4)
+    while (offset + 8 <= webpBytes.length) {
+      const tag  = String.fromCharCode(...webpBytes.slice(offset, offset + 4));
+      const size = view.getUint32(offset + 4, true);
+      const padded = size + (size & 1);   // RIFF chunks are word-aligned
+      if (wanted.has(tag)) {
+        parts.push(webpBytes.slice(offset, offset + 8 + padded));
+      }
+      offset += 8 + padded;
+    }
+    if (parts.length === 0) throw new Error('No VP8/VP8L chunk found in frame WebP');
+    return concat(parts);
   }
 
   // ── VP8X chunk ─────────────────────────────────────────────────
