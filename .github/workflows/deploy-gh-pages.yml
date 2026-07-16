@@ -33,7 +33,11 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM
-        run: ./build.sh
+        run: |
+          ./build.sh
+          # wasm-pack writes a .gitignore inside pkg/ that would cause the
+          # deploy action's `git add` to silently skip all WASM output files.
+          rm -f www/pkg/.gitignore
 
       - name: Deploy to gh-pages branch
         uses: JamesIves/github-pages-deploy-action@v4
