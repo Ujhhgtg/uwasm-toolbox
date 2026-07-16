@@ -3,14 +3,38 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TGS → GIF — µWasm Toolbox</title>
+  <title>TGS Converter — µWasm Toolbox</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="style.css" />
-  <!-- lottie-web (UMD) for Lottie frame rendering -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"
           integrity="sha512-jEnuDt6jfecCjthQAJ+ed0MTVA++5ZKmlUcmYGCYSP1p6P3CsE5g2TFgxpk9H5J5KUVP6J5q/J6UCoMBuADg=="
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <style>
+    .fmt-group {
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+    .fmt-radio { display: none; }
+    .fmt-label {
+      padding: .45rem 1.1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text-2);
+      transition: all var(--transition);
+      user-select: none;
+    }
+    .fmt-radio:checked + .fmt-label {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      color: var(--accent-h);
+    }
+    .fmt-label:hover { border-color: var(--text-2); color: var(--text); }
+  </style>
 </head>
 <body>
 
@@ -22,7 +46,7 @@
     Toolbox
   </a>
   <span class="topbar-sep"></span>
-  <span class="topbar-title">TGS → GIF Converter</span>
+  <span class="topbar-title">TGS Converter</span>
 </nav>
 
 <!-- Hidden canvas used for Lottie rendering -->
@@ -32,8 +56,8 @@
   <header class="tool-header">
     <div class="tool-header-icon">🎞️</div>
     <div>
-      <h1>TGS → GIF Converter</h1>
-      <p>Convert Telegram animated stickers <code>.tgs</code> to animated GIF</p>
+      <h1>TGS Converter</h1>
+      <p>Convert Telegram animated stickers <code>.tgs</code> to animated GIF or lossless WebP</p>
     </div>
   </header>
 
@@ -44,7 +68,6 @@
     <button class="drop-tab"        id="tab-folder" onclick="switchTab('folder')">📁 Folder</button>
   </div>
 
-  <!-- Files drop zone -->
   <div class="drop-zone" id="dz-files">
     <input type="file" id="input-files" multiple accept=".tgs" />
     <div class="drop-zone-icon">🎞️</div>
@@ -52,7 +75,6 @@
     <div class="drop-zone-hint">Supports multiple files</div>
   </div>
 
-  <!-- Folder drop zone -->
   <div class="drop-zone hidden" id="dz-folder">
     <input type="file" id="input-folder" webkitdirectory />
     <div class="drop-zone-icon">📁</div>
@@ -62,8 +84,19 @@
 
   <hr class="divider" />
 
-  <!-- ── Controls (mirrors tgs2gif.py CLI flags) ── -->
+  <!-- ── Controls ── -->
   <div class="section-label">Options</div>
+
+  <!-- Output format -->
+  <div class="ctrl" style="margin-bottom:1rem">
+    <label>Output format <span style="font-size:.75rem;font-weight:400">(–-webp)</span></label>
+    <div class="fmt-group" style="margin-top:.4rem">
+      <input class="fmt-radio" type="radio" name="fmt" id="fmt-gif"  value="gif"  checked />
+      <label class="fmt-label" for="fmt-gif">🖼 GIF</label>
+      <input class="fmt-radio" type="radio" name="fmt" id="fmt-webp" value="webp" />
+      <label class="fmt-label" for="fmt-webp">✨ WebP (lossless)</label>
+    </div>
+  </div>
 
   <div class="controls-grid">
     <div class="ctrl">
@@ -79,7 +112,7 @@
       <input type="number" id="opt-height" value="512" min="16" max="2048" step="8" />
     </div>
     <div class="ctrl">
-      <label for="opt-max-frames">Max frames <span style="font-size:.75rem;font-weight:400">(–-max-frames, optional)</span></label>
+      <label for="opt-max-frames">Max frames <span style="font-size:.75rem;font-weight:400">(–-max-frames)</span></label>
       <input type="number" id="opt-max-frames" placeholder="unlimited" min="1" max="9999" step="1" />
     </div>
     <div class="ctrl">
@@ -90,29 +123,23 @@
 
   <!-- ── Action ── -->
   <div class="btn-row">
-    <button class="btn btn-primary" id="btn-convert" disabled onclick="convertAll()">
-      ▶ Convert
-    </button>
-    <button class="btn btn-ghost" id="btn-clear" onclick="clearAll()">Clear</button>
-    <button class="btn btn-ghost" id="btn-download-all" style="display:none" onclick="downloadAll()">
-      ⬇ Download all
-    </button>
+    <button class="btn btn-primary" id="btn-convert" disabled onclick="convertAll()">▶ Convert</button>
+    <button class="btn btn-ghost"   id="btn-clear"   onclick="clearAll()">Clear</button>
+    <button class="btn btn-ghost"   id="btn-dl-all"  style="display:none" onclick="downloadAll()">⬇ Download all</button>
   </div>
 
   <div class="status-bar idle" id="status-bar">○ <span>No files loaded</span></div>
-
-  <!-- ── Results ── -->
   <div class="results" id="results"></div>
 </main>
 
 <script type="module">
 import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes, setStatus, setupDropZone } from './common.js';
 
-// ── State ────────────────────────────────────────────────────────
-let pendingFiles = [];
-let gifResults   = []; // {name, bytes}
+// ── State ─────────────────────────────────────────────────────────
+let pendingFiles  = [];
+let outputResults = []; // { name, bytes, mime }
 
-// ── Tab switching ────────────────────────────────────────────────
+// ── Tab switching ─────────────────────────────────────────────────
 window.switchTab = function(tab) {
   document.getElementById('tab-files').classList.toggle('active',  tab === 'files');
   document.getElementById('tab-folder').classList.toggle('active', tab === 'folder');
@@ -120,15 +147,13 @@ window.switchTab = function(tab) {
   document.getElementById('dz-folder').classList.toggle('hidden',  tab !== 'folder');
 };
 
-// ── Frame range parsing (mirrors Python's parse_range) ────────────
+// ── Frame range parsing ───────────────────────────────────────────
 function parseRange(s) {
   if (!s || !s.trim()) return null;
   const parts = s.trim().split('-');
   if (parts.length === 1) { const v = parseInt(parts[0]); return [v, v + 1]; }
   if (parts.length === 2) {
-    const lo = parts[0] ? parseInt(parts[0]) : 0;
-    const hi = parts[1] ? parseInt(parts[1]) : 999999;
-    return [lo, hi];
+    return [parts[0] ? parseInt(parts[0]) : 0, parts[1] ? parseInt(parts[1]) : 999999];
   }
   return null;
 }
@@ -137,10 +162,10 @@ function parseRange(s) {
 function ingestFiles(fileList) {
   const arr = [...fileList].filter(f => f.name.toLowerCase().endsWith('.tgs'));
   if (!arr.length) { alert('No .tgs files found in the selection.'); return; }
-  pendingFiles = arr.map(f => ({ file: f, name: f.name }));
-  gifResults = [];
+  pendingFiles  = arr.map(f => ({ file: f, name: f.name }));
+  outputResults = [];
   document.getElementById('results').innerHTML = '';
-  document.getElementById('btn-download-all').style.display = 'none';
+  document.getElementById('btn-dl-all').style.display = 'none';
   setStatus(document.getElementById('status-bar'), 'idle',
     `${pendingFiles.length} file${pendingFiles.length > 1 ? 's' : ''} ready`);
   document.getElementById('btn-convert').disabled = false;
@@ -151,56 +176,42 @@ setupDropZone(document.getElementById('dz-folder'), f => ingestFiles(f));
 document.getElementById('input-files').addEventListener('change',  e => ingestFiles(e.target.files));
 document.getElementById('input-folder').addEventListener('change', e => ingestFiles(e.target.files));
 
-// ── Core: render one TGS to GIF bytes ────────────────────────────
+// ── Lottie frame sampler ──────────────────────────────────────────
 
 /**
- * Render a TGS JSON string to an animated GIF using lottie-web + WASM.
- *
- * @param {string}      lottiJson  Lottie animation JSON string
- * @param {object}      opts       { fps, width, height, maxFrames, range }
- * @param {HTMLElement} progEl     Element whose progress bar fill to update
- * @returns {Uint8Array} GIF file bytes
+ * Render a Lottie animation to a sequence of ImageData frames.
+ * Returns { frames: ImageData[], outputFps: number }
  */
-async function renderToGif(lottieJson, opts, progEl) {
+async function sampleFrames(lottieJson, opts, progEl) {
   const { fps, width, height, maxFrames, range } = opts;
-
-  // Parse the JSON to inspect animation metadata
   const animData = JSON.parse(lottieJson);
-  const animFps   = animData.fr || 30;     // animation's native frame rate
-  const outPoint  = animData.op || 60;     // last frame index
+  const animFps  = animData.fr || 30;
+  const outPoint = animData.op || 60;
 
-  // Compute which frames to render (same logic as the Python script)
-  const step = Math.max(1, Math.round(animFps / fps));
+  const step      = Math.max(1, Math.round(animFps / fps));
   const outputFps = animFps / step;
-  const delayCentisec = Math.max(1, Math.round(100 / outputFps));
 
-  let frames = [];
-  for (let f = 0; f < outPoint; f += step) frames.push(f);
+  let frameNums = [];
+  for (let f = 0; f < outPoint; f += step) frameNums.push(f);
 
-  // Apply --frames range filter
   if (range) {
     const [lo, hi] = range;
-    frames = frames.filter(f => f >= lo && f < hi);
+    frameNums = frameNums.filter(f => f >= lo && f < hi);
   }
-
-  // Apply --max-frames uniform subsampling
-  if (maxFrames && frames.length > maxFrames) {
-    const keep = Math.max(1, maxFrames);
-    const step2 = Math.max(1, Math.floor(frames.length / keep));
-    frames = frames.filter((_, i) => i % step2 === 0).slice(0, keep);
+  if (maxFrames && frameNums.length > maxFrames) {
+    const s2 = Math.max(1, Math.floor(frameNums.length / maxFrames));
+    frameNums = frameNums.filter((_, i) => i % s2 === 0).slice(0, maxFrames);
   }
+  if (!frameNums.length) throw new Error('No frames to render (check frame range / max-frames)');
 
-  if (!frames.length) throw new Error('No frames to render (check frame range / max-frames)');
-
-  // Set up offscreen canvas
   const canvas = document.getElementById('render-canvas');
   canvas.width  = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-  // Load lottie animation into the canvas
   const container = document.createElement('div');
-  container.style.cssText = `position:absolute;left:-9999px;width:${width}px;height:${height}px`;
+  container.style.cssText =
+    `position:absolute;left:-9999px;width:${width}px;height:${height}px;overflow:hidden`;
   document.body.appendChild(container);
 
   const anim = lottie.loadAnimation({
@@ -220,46 +231,174 @@ async function renderToGif(lottieJson, opts, progEl) {
   await new Promise((resolve, reject) => {
     anim.addEventListener('DOMLoaded', resolve);
     anim.addEventListener('error', reject);
-    setTimeout(reject, 5000); // timeout guard
+    setTimeout(reject, 5000);
   });
 
-  // Collect RGBA pixels for each frame
-  const frameCount  = frames.length;
-  const pixelsPerFrame = width * height * 4;
-  const allFrames   = new Uint8Array(frameCount * pixelsPerFrame);
-
-  for (let i = 0; i < frameCount; i++) {
-    anim.goToAndStop(frames[i], true);
-    // Let lottie flush to canvas
-    await microtask();
-    const imageData = ctx.getImageData(0, 0, width, height);
-    allFrames.set(imageData.data, i * pixelsPerFrame);
-
-    if (progEl) {
-      const pct = Math.round(((i + 1) / frameCount) * 100);
-      progEl.style.width = pct + '%';
-    }
+  const frames = [];
+  for (let i = 0; i < frameNums.length; i++) {
+    anim.goToAndStop(frameNums[i], true);
+    await tick();
+    frames.push(ctx.getImageData(0, 0, width, height));
+    if (progEl) progEl.style.width = Math.round((i + 1) / frameNums.length * 100) + '%';
   }
 
   anim.destroy();
   container.remove();
-
-  // Encode via WASM
-  const mod = wasm();
-  const gifBytes = mod.tgs_encode_gif(allFrames, width, height, frameCount, delayCentisec);
-  return gifBytes;
+  return { frames, outputFps };
 }
 
-/** Yield to the microtask queue so the canvas rendering flushes. */
-function microtask() {
-  return new Promise(r => setTimeout(r, 0));
+const tick = () => new Promise(r => setTimeout(r, 0));
+
+// ── GIF encoding (Rust WASM) ──────────────────────────────────────
+
+async function encodeGif(frames, width, height, outputFps) {
+  const delayCentisec = Math.max(1, Math.round(100 / outputFps));
+  const pixPerFrame   = width * height * 4;
+  const flat          = new Uint8Array(frames.length * pixPerFrame);
+  frames.forEach((f, i) => flat.set(f.data, i * pixPerFrame));
+  return wasm().tgs_encode_gif(flat, width, height, frames.length, delayCentisec);
+}
+
+// ── Animated WebP encoding (JS-side, RIFF/ANIM container) ─────────
+
+/**
+ * Encode an array of ImageData frames to an animated WebP.
+ *
+ * Each frame is encoded by the browser's native canvas.toBlob('image/webp')
+ * (hardware-accelerated, lossless VP8L with alpha). The resulting VP8L
+ * bitstreams are then muxed into a RIFF/WEBP/ANIM container.
+ */
+async function encodeWebP(frames, width, height, outputFps) {
+  const delayMs = Math.max(1, Math.round(1000 / outputFps));
+
+  // Encode every frame as a standalone WebP via a temporary canvas
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width  = width;
+  tmpCanvas.height = height;
+  const tmpCtx = tmpCanvas.getContext('2d');
+
+  const frameWebPs = [];
+  for (const imgData of frames) {
+    tmpCtx.putImageData(imgData, 0, 0);
+    const blob = await new Promise(r => tmpCanvas.toBlob(r, 'image/webp'));
+    if (!blob) throw new Error('canvas.toBlob returned null — WebP encoding not supported in this browser');
+    frameWebPs.push(new Uint8Array(await blob.arrayBuffer()));
+  }
+
+  return muxAnimatedWebP(frameWebPs, width, height, delayMs);
+}
+
+/**
+ * Mux an array of single-frame WebP files into an animated WebP.
+ *
+ * The RIFF structure:
+ *   RIFF <size> WEBP
+ *     VP8X <10 bytes>   — canvas dimensions + animation + alpha flags
+ *     ANIM <6 bytes>    — background colour + loop count (0 = ∞)
+ *     ANMF <N bytes>    — one per frame: position + duration + VP8/VP8L bitstream
+ */
+function muxAnimatedWebP(frameWebPs, width, height, delayMs) {
+  // ── Low-level RIFF helpers ──────────────────────────────────────
+
+  const enc = new TextEncoder();
+
+  /** Concatenate a list of Uint8Arrays. */
+  function concat(parts) {
+    const total = parts.reduce((s, p) => s + p.length, 0);
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const p of parts) { out.set(p, off); off += p.length; }
+    return out;
+  }
+
+  /** Write a 32-bit unsigned integer LE. */
+  function u32(n) {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setUint32(0, n >>> 0, true);
+    return b;
+  }
+
+  /** Write a 24-bit unsigned integer LE (3 bytes). */
+  function u24(n) {
+    return new Uint8Array([n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff]);
+  }
+
+  /**
+   * Wrap payload in a RIFF chunk: [tag(4)] [size(4 LE)] [payload] [pad?]
+   * Chunk size field is the payload length; if odd, one 0x00 pad byte is appended.
+   */
+  function riffChunk(tag, payload) {
+    const padded = payload.length & 1
+      ? concat([payload, new Uint8Array(1)])
+      : payload;
+    return concat([enc.encode(tag), u32(payload.length), padded]);
+  }
+
+  // ── Extract frame bitstream from a single-frame WebP ─────────────
+  // A static WebP file is: RIFF(4) size(4) WEBP(4) [chunks...]
+  // We want everything after the 12-byte file header as the ANMF payload.
+  function extractFrameData(webpBytes) {
+    // Verify RIFF + WEBP magic
+    const sig = String.fromCharCode(...webpBytes.slice(0, 4));
+    const fmt = String.fromCharCode(...webpBytes.slice(8, 12));
+    if (sig !== 'RIFF' || fmt !== 'WEBP') throw new Error('Invalid WebP from toBlob');
+    return webpBytes.slice(12); // VP8/VP8L/VP8X chunk(s)
+  }
+
+  // ── VP8X chunk ─────────────────────────────────────────────────
+  // Byte 0: flags — bit 1 = animation, bit 4 = alpha (stickers have alpha)
+  // Bytes 1-3: reserved (0)
+  // Bytes 4-6: canvas width  − 1 (24-bit LE)
+  // Bytes 7-9: canvas height − 1 (24-bit LE)
+  const vp8xFlags = (1 << 1) | (1 << 4); // animation | alpha
+  const vp8xPayload = concat([
+    new Uint8Array([vp8xFlags, 0, 0, 0]),
+    u24(width  - 1),
+    u24(height - 1),
+  ]);
+  const vp8xChunk = riffChunk('VP8X', vp8xPayload);
+
+  // ── ANIM chunk ─────────────────────────────────────────────────
+  // Bytes 0-3: background colour RGBA (0 = transparent)
+  // Bytes 4-5: loop count (0 = infinite)
+  const animPayload = concat([new Uint8Array(4), new Uint8Array(2)]);
+  const animChunk   = riffChunk('ANIM', animPayload);
+
+  // ── ANMF chunks ────────────────────────────────────────────────
+  // Per frame:
+  //   Bytes 0-2:  frame X / 2 (24-bit LE)
+  //   Bytes 3-5:  frame Y / 2 (24-bit LE)
+  //   Bytes 6-8:  frame width  − 1 (24-bit LE)
+  //   Bytes 9-11: frame height − 1 (24-bit LE)
+  //   Bytes 12-14: duration in ms (24-bit LE)
+  //   Byte 15:    flags (bit 0 = no-blending, bit 1 = disposal)
+  //   Bytes 16+:  frame bitstream (VP8/VP8L/VP8X chunks)
+  const anmfChunks = frameWebPs.map(webpBytes => {
+    const frameData  = extractFrameData(webpBytes);
+    const anmfHeader = concat([
+      u24(0),              // frame X / 2
+      u24(0),              // frame Y / 2
+      u24(width  - 1),
+      u24(height - 1),
+      u24(delayMs),
+      new Uint8Array([0]), // flags: blend + no-disposal
+    ]);
+    return riffChunk('ANMF', concat([anmfHeader, frameData]));
+  });
+
+  // ── Final RIFF container ────────────────────────────────────────
+  const webpBody = concat([vp8xChunk, animChunk, ...anmfChunks]);
+  const riffBody = concat([enc.encode('WEBP'), webpBody]);
+  return concat([enc.encode('RIFF'), u32(riffBody.length), riffBody]);
 }
 
 // ── Batch conversion ─────────────────────────────────────────────
+
 window.convertAll = async function() {
   const statusEl  = document.getElementById('status-bar');
   const resultsEl = document.getElementById('results');
 
+  const format    = document.querySelector('input[name="fmt"]:checked').value; // 'gif' | 'webp'
   const fps       = Math.max(1, parseInt(document.getElementById('opt-fps').value)     || 15);
   const width     = Math.max(16, parseInt(document.getElementById('opt-width').value)  || 512);
   const height    = Math.max(16, parseInt(document.getElementById('opt-height').value) || 512);
@@ -268,15 +407,16 @@ window.convertAll = async function() {
 
   document.getElementById('btn-convert').disabled = true;
   resultsEl.innerHTML = '';
-  gifResults = [];
+  outputResults = [];
 
-  setStatus(statusEl, 'busy', 'Initialising WASM…');
-  let mod;
-  try { mod = await initWasm(); }
-  catch(e) {
-    setStatus(statusEl, 'failed', `WASM load failed: ${e.message}`);
-    document.getElementById('btn-convert').disabled = false;
-    return;
+  if (format === 'gif') {
+    setStatus(statusEl, 'busy', 'Initialising WASM…');
+    try { await initWasm(); }
+    catch(e) {
+      setStatus(statusEl, 'failed', `WASM load failed: ${e.message}`);
+      document.getElementById('btn-convert').disabled = false;
+      return;
+    }
   }
 
   let done = 0, failed = 0;
@@ -285,7 +425,6 @@ window.convertAll = async function() {
     setStatus(statusEl, 'busy',
       `Converting ${done + failed + 1}/${pendingFiles.length}: ${item.name}`);
 
-    // Create result card with progress bar
     const cardId = `res-${done + failed}`;
     const card = document.createElement('div');
     card.className = 'result-item pending';
@@ -305,32 +444,37 @@ window.convertAll = async function() {
 
     try {
       const bytes      = await readFileBytes(item.file);
-      const lottieJson = mod.tgs_decompress(bytes);
+      const lottieJson = (format === 'gif' ? wasm() : await initWasm()).tgs_decompress(bytes);
+      const progEl     = document.getElementById(`prog-${cardId}`);
 
-      const progEl = document.getElementById(`prog-${cardId}`);
-      const gifBytes = await renderToGif(lottieJson, { fps, width, height, maxFrames, range }, progEl);
+      const { frames, outputFps } = await sampleFrames(
+        lottieJson, { fps, width, height, maxFrames, range }, progEl);
 
-      const outName = replaceExt(item.name, 'gif');
-      gifResults.push({ name: outName, bytes: gifBytes });
+      let outBytes;
+      if (format === 'gif') {
+        outBytes = await encodeGif(frames, width, height, outputFps);
+      } else {
+        outBytes = await encodeWebP(frames, width, height, outputFps);
+      }
 
-      // Build a data URL for preview thumbnail
-      const blob    = new Blob([gifBytes], { type: 'image/gif' });
-      const blobUrl = URL.createObjectURL(blob);
+      const outName = replaceExt(item.name, format);
+      const mime    = format === 'gif' ? 'image/gif' : 'image/webp';
+      outputResults.push({ name: outName, bytes: outBytes, mime });
 
+      const previewUrl = URL.createObjectURL(new Blob([outBytes], { type: mime }));
       card.className = 'result-item success';
       card.innerHTML = `
         <div class="result-icon">✅</div>
         <div class="result-body">
           <div class="result-name">${esc(outName)}</div>
-          <div class="result-sub">${fmtBytes(gifBytes.length)} · ${width}×${height} · ${fps} fps</div>
+          <div class="result-sub">${fmtBytes(outBytes.length)} · ${width}×${height} · ${fps} fps · ${format.toUpperCase()}</div>
           <div class="tgs-preview" style="margin-top:.5rem">
-            <img src="${blobUrl}" alt="preview" style="max-width:96px;border-radius:8px" />
+            <img src="${previewUrl}" alt="preview" style="max-width:96px;border-radius:8px" />
           </div>
         </div>
         <div class="result-actions">
-          <button class="btn btn-ghost" onclick="dlOne(${gifResults.length - 1})">⬇ Download</button>
+          <button class="btn btn-ghost" onclick="dlOne(${outputResults.length - 1})">⬇ Download</button>
         </div>`;
-
       done++;
     } catch(e) {
       card.className = 'result-item error';
@@ -349,23 +493,21 @@ window.convertAll = async function() {
     : `Done: ${done} file${done > 1 ? 's' : ''} converted`;
   setStatus(statusEl, failed ? 'failed' : 'done', msg);
   document.getElementById('btn-convert').disabled = false;
-  if (gifResults.length > 1) document.getElementById('btn-download-all').style.display = '';
+  if (outputResults.length > 1) document.getElementById('btn-dl-all').style.display = '';
 };
 
-// ── Download helpers ──────────────────────────────────────────────
 window.dlOne = function(idx) {
-  const r = gifResults[idx];
-  if (r) downloadBytes(r.bytes, r.name, 'image/gif');
+  const r = outputResults[idx];
+  if (r) downloadBytes(r.bytes, r.name, r.mime);
 };
 window.downloadAll = function() {
-  gifResults.forEach(r => downloadBytes(r.bytes, r.name, 'image/gif'));
+  outputResults.forEach(r => downloadBytes(r.bytes, r.name, r.mime));
 };
 window.clearAll = function() {
-  pendingFiles = [];
-  gifResults   = [];
+  pendingFiles = outputResults = [];
   document.getElementById('results').innerHTML = '';
   document.getElementById('btn-convert').disabled = true;
-  document.getElementById('btn-download-all').style.display = 'none';
+  document.getElementById('btn-dl-all').style.display = 'none';
   document.getElementById('input-files').value = '';
   document.getElementById('input-folder').value = '';
   setStatus(document.getElementById('status-bar'), 'idle', 'No files loaded');
