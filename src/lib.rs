@@ -30,20 +30,35 @@ impl NcmResult {
     pub fn cover_mime(&self) -> String { self.cover_mime.clone() }
 }
 
+/// Decrypt a `.ncm` file, embed metadata and cover art, then return the result.
+///
+/// If no cover art is embedded in the file, attempts to fetch it from the
+/// NetEase CDN via the URL stored in the metadata (uses browser `fetch`).
 #[wasm_bindgen]
-pub fn ncm_convert(data: &[u8]) -> Result<NcmResult, JsValue> {
+pub async fn ncm_convert(data: &[u8]) -> Result<NcmResult, JsValue> {
     let decoded = ncm::decode(data).map_err(|e| JsValue::from_str(&e))?;
+
+    let audio = ncm::apply_metadata_async(
+        decoded.audio,
+        decoded.metadata.as_ref(),
+        &decoded.cover,
+        &decoded.album_pic_url,
+    )
+    .await;
+
     let metadata_json = match &decoded.metadata {
         Some(m) => serde_json::to_string(m).unwrap_or_default(),
         None => String::new(),
     };
+
     let cover_mime = if decoded.cover.is_empty() {
         String::new()
     } else {
         ncm::cover_mime(&decoded.cover).to_string()
     };
+
     Ok(NcmResult {
-        audio: decoded.audio,
+        audio,
         format: decoded.format,
         metadata_json,
         cover: decoded.cover,

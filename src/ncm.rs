@@ -42,6 +42,8 @@ pub struct NcmDecoded {
     pub metadata: Option<SongMeta>,
     /// Raw cover image bytes (JPEG or PNG), if embedded in the .ncm file.
     pub cover: Vec<u8>,
+    /// Remote album art URL from the metadata, used when no cover is embedded.
+    pub album_pic_url: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +127,7 @@ pub fn decode(data: &[u8]) -> Result<NcmDecoded, String> {
     let meta_len_raw = read_exact(&mut cur, 4).map_err(|e| e.to_string())?;
     let meta_len = u32::from_le_bytes(meta_len_raw[..4].try_into().unwrap()) as usize;
 
-    let (metadata, _album_pic_url) = if meta_len > 0 {
+    let (metadata, album_pic_url) = if meta_len > 0 {
         let mut modify_data = read_exact(&mut cur, meta_len).map_err(|e| e.to_string())?;
         for b in &mut modify_data {
             *b ^= 0x63;
@@ -226,13 +228,9 @@ pub fn decode(data: &[u8]) -> Result<NcmDecoded, String> {
         audio.extend_from_slice(&buffer[..n]);
     }
 
-    // Embed metadata into the audio bytes (best-effort)
-    let audio = match &metadata {
-        Some(meta) => apply_metadata(audio, meta, &cover),
-        None => audio,
-    };
-
-    Ok(NcmDecoded { audio, format: format_str, metadata, cover })
+    // Metadata embedding happens async (may need to fetch remote cover art).
+    // Return raw audio here; lib.rs calls apply_metadata_async after decode.
+    Ok(NcmDecoded { audio, format: format_str, metadata, cover, album_pic_url })
 }
 
 /// MIME type of the embedded cover image, derived from its header bytes.
@@ -246,14 +244,46 @@ pub fn cover_mime(cover: &[u8]) -> &'static str {
 
 /// Embed title, artist, album, and cover art into the decrypted audio bytes.
 ///
-/// Uses lofty's in-memory API (`read_from` + `save_to` on a `Cursor`).
-/// Best-effort: returns the original bytes unchanged if lofty can't parse
-/// or write the file (e.g. unsupported tag format).
-pub fn apply_metadata(audio: Vec<u8>, meta: &SongMeta, cover: &[u8]) -> Vec<u8> {
-    match try_apply_metadata(&audio, meta, cover) {
+/// If no cover is embedded in the `.ncm` file and `pic_url` is non-empty,
+/// fetches the image from the NetEase CDN before writing tags (same
+/// behaviour as ncmx's `fix_metadata(true)`).
+///
+/// Best-effort: returns the original bytes unchanged on any failure.
+pub async fn apply_metadata_async(
+    audio: Vec<u8>,
+    meta: Option<&SongMeta>,
+    embedded_cover: &[u8],
+    pic_url: &str,
+) -> Vec<u8> {
+    let Some(meta) = meta else { return audio };
+
+    // Resolve cover: prefer embedded, fall back to remote fetch
+    let cover: Vec<u8> = if !embedded_cover.is_empty() {
+        embedded_cover.to_vec()
+    } else if !pic_url.is_empty() {
+        fetch_bytes(pic_url).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    match try_apply_metadata(&audio, meta, &cover) {
         Ok(tagged) => tagged,
         Err(_) => audio,
     }
+}
+
+/// Fetch raw bytes from a URL (async, uses browser fetch on WASM).
+async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
+    let resp = reqwest::get(url)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.bytes()
+        .await
+        .map(|b| b.to_vec())
+        .map_err(|e| e.to_string())
 }
 
 fn try_apply_metadata(audio: &[u8], meta: &SongMeta, cover: &[u8]) -> Result<Vec<u8>, String> {
@@ -263,7 +293,6 @@ fn try_apply_metadata(audio: &[u8], meta: &SongMeta, cover: &[u8]) -> Result<Vec
     use lofty::prelude::*;
     use lofty::probe::Probe;
 
-    // Probe requires BufRead + Seek; wrap the slice in BufReader + Cursor
     let read_cur = std::io::BufReader::new(Cursor::new(audio));
     let mut tagged = Probe::new(read_cur)
         .guess_file_type()
@@ -287,7 +316,6 @@ fn try_apply_metadata(audio: &[u8], meta: &SongMeta, cover: &[u8]) -> Result<Vec
         tag.set_picture(0, picture);
     }
 
-    // save_to writes the modified file into a writable + seekable cursor
     let mut write_cur = Cursor::new(audio.to_vec());
     tagged
         .save_to(&mut write_cur, WriteOptions::default())
