@@ -16,6 +16,9 @@ aes = "0.9"
 base64 = "0.22"
 serde_json = "1"
 
+# NCM metadata writing (in-memory; id3v2_compression_support needs flate2)
+lofty = "0.24"
+
 # TGS decompression
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 

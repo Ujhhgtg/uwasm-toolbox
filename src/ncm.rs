@@ -226,10 +226,71 @@ pub fn decode(data: &[u8]) -> Result<NcmDecoded, String> {
         audio.extend_from_slice(&buffer[..n]);
     }
 
+    // Embed metadata into the audio bytes (best-effort)
+    let audio = match &metadata {
+        Some(meta) => apply_metadata(audio, meta, &cover),
+        None => audio,
+    };
+
     Ok(NcmDecoded { audio, format: format_str, metadata, cover })
 }
 
 /// MIME type of the embedded cover image, derived from its header bytes.
 pub fn cover_mime(cover: &[u8]) -> &'static str {
     if cover.starts_with(&PNG_HEADER) { "image/png" } else { "image/jpeg" }
+}
+
+// ---------------------------------------------------------------------------
+// Metadata writing
+// ---------------------------------------------------------------------------
+
+/// Embed title, artist, album, and cover art into the decrypted audio bytes.
+///
+/// Uses lofty's in-memory API (`read_from` + `save_to` on a `Cursor`).
+/// Best-effort: returns the original bytes unchanged if lofty can't parse
+/// or write the file (e.g. unsupported tag format).
+pub fn apply_metadata(audio: Vec<u8>, meta: &SongMeta, cover: &[u8]) -> Vec<u8> {
+    match try_apply_metadata(&audio, meta, cover) {
+        Ok(tagged) => tagged,
+        Err(_) => audio,
+    }
+}
+
+fn try_apply_metadata(audio: &[u8], meta: &SongMeta, cover: &[u8]) -> Result<Vec<u8>, String> {
+    use lofty::config::WriteOptions;
+    use lofty::file::AudioFile;
+    use lofty::picture::{MimeType, Picture, PictureType};
+    use lofty::prelude::*;
+    use lofty::probe::Probe;
+
+    // Probe requires BufRead + Seek; wrap the slice in BufReader + Cursor
+    let read_cur = std::io::BufReader::new(Cursor::new(audio));
+    let mut tagged = Probe::new(read_cur)
+        .guess_file_type()
+        .map_err(|e| e.to_string())?
+        .read()
+        .map_err(|e| e.to_string())?;
+
+    let tag = tagged.primary_tag_mut().ok_or("no primary tag")?;
+
+    if !meta.name.is_empty()   { tag.set_title(meta.name.clone()); }
+    if !meta.artist.is_empty() { tag.set_artist(meta.artist.clone()); }
+    if !meta.album.is_empty()  { tag.set_album(meta.album.clone()); }
+
+    if !cover.is_empty() {
+        let mime = if cover.starts_with(&PNG_HEADER) { MimeType::Png } else { MimeType::Jpeg };
+        let picture = Picture::unchecked(cover.to_vec())
+            .pic_type(PictureType::CoverFront)
+            .mime_type(mime)
+            .description("Cover")
+            .build();
+        tag.set_picture(0, picture);
+    }
+
+    // save_to writes the modified file into a writable + seekable cursor
+    let mut write_cur = Cursor::new(audio.to_vec());
+    tagged
+        .save_to(&mut write_cur, WriteOptions::default())
+        .map_err(|e| e.to_string())?;
+    Ok(write_cur.into_inner())
 }
