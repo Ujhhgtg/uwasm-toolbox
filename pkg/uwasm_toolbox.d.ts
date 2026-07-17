@@ -1,59 +1,36 @@
 /* tslint:disable */
 /* eslint-disable */
 
-/**
- * Result object returned by `ncm_convert`.
- */
 export class NcmResult {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
-    /**
-     * Raw decrypted audio bytes (FLAC or MP3).
-     */
     readonly audio: Uint8Array;
-    /**
-     * Embedded cover image bytes (JPEG or PNG). Empty if none.
-     */
     readonly cover: Uint8Array;
-    /**
-     * MIME type of the cover image (`"image/jpeg"` or `"image/png"`).
-     */
     readonly cover_mime: string;
-    /**
-     * `"flac"` or `"mp3"`.
-     */
     readonly format: string;
-    /**
-     * JSON string with keys: name, album, artist, bitrate, duration, format.
-     * Empty string if the file contains no metadata.
-     */
     readonly metadata_json: string;
 }
 
-/**
- * Decrypt a `.ncm` file.
- *
- * Returns an `NcmResult` on success, or throws a JS string error.
- */
 export function ncm_convert(data: Uint8Array): NcmResult;
 
 /**
- * Decompress a `.tgs` file (gzip'd Lottie JSON) and return the JSON string.
+ * Convert a `.tgs` file to an animated GIF or lossless WebP entirely in Rust.
  *
- * The returned string should be passed to `lottie-web` for frame rendering.
+ * Parameters
+ * ----------
+ * data         — raw `.tgs` bytes (gzip-compressed or plain UTF-8 Lottie JSON)
+ * fps          — target output frame rate (clamped to animation's native fps)
+ * width        — output width in pixels
+ * height       — output height in pixels
+ * max_frames   — maximum number of frames (0 = unlimited)
+ * frame_start  — first source frame to include (0 = animation start)
+ * frame_end    — last source frame (exclusive, 0 = animation end)
+ * format       — `"gif"` or `"webp"`
+ *
+ * Returns the encoded file bytes, or throws a JS string error.
  */
-export function tgs_decompress(data: Uint8Array): string;
-
-/**
- * Encode a sequence of RGBA frames into an animated GIF.
- *
- * `frames_rgba` — flat buffer: `frame_count × height × width × 4` bytes (RGBA order).
- * `delay_cs`    — per-frame delay in centiseconds (e.g. `7` ≈ 15 fps).
- *
- * Returns the GIF file as a byte vector, or throws a JS string error.
- */
-export function tgs_encode_gif(frames_rgba: Uint8Array, width: number, height: number, frame_count: number, delay_cs: number): Uint8Array;
+export function tgs_convert(data: Uint8Array, fps: number, width: number, height: number, max_frames: number, frame_start: number, frame_end: number, format: string): Uint8Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -66,12 +43,12 @@ export interface InitOutput {
     readonly ncmresult_cover_mime: (a: number) => [number, number];
     readonly ncmresult_format: (a: number) => [number, number];
     readonly ncmresult_metadata_json: (a: number) => [number, number];
-    readonly tgs_decompress: (a: number, b: number) => [number, number, number, number];
-    readonly tgs_encode_gif: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly tgs_convert: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_start: () => void;
 }
 

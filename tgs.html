@@ -8,29 +8,15 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="style.css" />
   <style>
-    .fmt-group {
-      display: flex;
-      gap: .5rem;
-      flex-wrap: wrap;
+    .fmt-group { display:flex; gap:.5rem; flex-wrap:wrap; }
+    .fmt-radio  { display:none; }
+    .fmt-label  {
+      padding:.45rem 1.1rem; border:1px solid var(--border); border-radius:var(--radius);
+      font-size:.85rem; font-weight:600; cursor:pointer; color:var(--text-2);
+      transition:all var(--transition); user-select:none;
     }
-    .fmt-radio { display: none; }
-    .fmt-label {
-      padding: .45rem 1.1rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      font-size: .85rem;
-      font-weight: 600;
-      cursor: pointer;
-      color: var(--text-2);
-      transition: all var(--transition);
-      user-select: none;
-    }
-    .fmt-radio:checked + .fmt-label {
-      border-color: var(--accent);
-      background: var(--accent-dim);
-      color: var(--accent-h);
-    }
-    .fmt-label:hover { border-color: var(--text-2); color: var(--text); }
+    .fmt-radio:checked + .fmt-label { border-color:var(--accent); background:var(--accent-dim); color:var(--accent-h); }
+    .fmt-label:hover { border-color:var(--text-2); color:var(--text); }
   </style>
 </head>
 <body>
@@ -46,15 +32,12 @@
   <span class="topbar-title">TGS Converter</span>
 </nav>
 
-<!-- Hidden canvas used for Lottie rendering -->
-<canvas id="render-canvas" style="position:fixed;left:-9999px;top:-9999px;pointer-events:none" aria-hidden="true"></canvas>
-
 <main class="page">
   <header class="tool-header">
     <div class="tool-header-icon">🎞️</div>
     <div>
       <h1>TGS Converter</h1>
-      <p>Convert Telegram animated stickers <code>.tgs</code> to animated GIF or lossless WebP</p>
+      <p>Convert Telegram animated stickers <code>.tgs</code> to animated GIF or lossless WebP — rendered in Rust/WASM</p>
     </div>
   </header>
 
@@ -90,9 +73,8 @@
   <!-- ── Controls ── -->
   <div class="section-label">Options</div>
 
-  <!-- Output format -->
   <div class="ctrl" style="margin-bottom:1rem">
-    <label>Output format <span style="font-size:.75rem;font-weight:400">(–-webp)</span></label>
+    <label>Output format <span style="font-size:.75rem;font-weight:400">(--webp)</span></label>
     <div class="fmt-group" style="margin-top:.4rem">
       <input class="fmt-radio" type="radio" name="fmt" id="fmt-gif"  value="gif"  checked />
       <label class="fmt-label" for="fmt-gif">🖼 GIF</label>
@@ -103,23 +85,23 @@
 
   <div class="controls-grid">
     <div class="ctrl">
-      <label for="opt-fps">FPS <span style="font-size:.75rem;font-weight:400">(–-fps, default 15)</span></label>
+      <label for="opt-fps">FPS <span style="font-size:.75rem;font-weight:400">(--fps, default 15)</span></label>
       <input type="number" id="opt-fps" value="15" min="1" max="60" step="1" />
     </div>
     <div class="ctrl">
-      <label for="opt-width">Width px <span style="font-size:.75rem;font-weight:400">(–-width, default 512)</span></label>
+      <label for="opt-width">Width px <span style="font-size:.75rem;font-weight:400">(--width, default 512)</span></label>
       <input type="number" id="opt-width" value="512" min="16" max="2048" step="8" />
     </div>
     <div class="ctrl">
-      <label for="opt-height">Height px <span style="font-size:.75rem;font-weight:400">(–-height, default 512)</span></label>
+      <label for="opt-height">Height px <span style="font-size:.75rem;font-weight:400">(--height, default 512)</span></label>
       <input type="number" id="opt-height" value="512" min="16" max="2048" step="8" />
     </div>
     <div class="ctrl">
-      <label for="opt-max-frames">Max frames <span style="font-size:.75rem;font-weight:400">(–-max-frames)</span></label>
+      <label for="opt-max-frames">Max frames <span style="font-size:.75rem;font-weight:400">(--max-frames)</span></label>
       <input type="number" id="opt-max-frames" placeholder="unlimited" min="1" max="9999" step="1" />
     </div>
     <div class="ctrl">
-      <label for="opt-frames">Frame range <span style="font-size:.75rem;font-weight:400">(–-frames, e.g. 30-90)</span></label>
+      <label for="opt-frames">Frame range <span style="font-size:.75rem;font-weight:400">(--frames, e.g. 30-90)</span></label>
       <input type="text" id="opt-frames" placeholder="e.g. 30-90" />
     </div>
   </div>
@@ -136,16 +118,16 @@
 </main>
 
 <script type="module">
-import lottie from 'https://esm.sh/lottie-web@5.12.2';
-import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes, setStatus, setupDropZone, showFileList, resetDropZone } from './common.js';
+import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes,
+         setStatus, setupDropZone, showFileList, resetDropZone } from './common.js';
 
-// ── State ─────────────────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────────────────
 let pendingFiles  = [];
-let outputResults = []; // { name, bytes, mime }
-let activeZone    = null; // drop zone currently showing a file list
-let addMode       = false; // true when the Add button triggered the file picker
+let outputResults = [];
+let activeZone    = null;
+let addMode       = false;
 
-// ── Tab switching ─────────────────────────────────────────────────
+// ── Tab switching ──────────────────────────────────────────────────
 window.switchTab = function(tab) {
   document.getElementById('tab-files').classList.toggle('active',  tab === 'files');
   document.getElementById('tab-folder').classList.toggle('active', tab === 'folder');
@@ -153,25 +135,22 @@ window.switchTab = function(tab) {
   document.getElementById('dz-folder').classList.toggle('hidden',  tab !== 'folder');
 };
 
-// ── Frame range parsing ───────────────────────────────────────────
+// ── Frame range parsing ────────────────────────────────────────────
 function parseRange(s) {
-  if (!s || !s.trim()) return null;
+  if (!s || !s.trim()) return [0, 0];
   const parts = s.trim().split('-');
   if (parts.length === 1) { const v = parseInt(parts[0]); return [v, v + 1]; }
-  if (parts.length === 2) {
-    return [parts[0] ? parseInt(parts[0]) : 0, parts[1] ? parseInt(parts[1]) : 999999];
-  }
-  return null;
+  if (parts.length === 2) return [parts[0] ? parseInt(parts[0]) : 0, parts[1] ? parseInt(parts[1]) : 0];
+  return [0, 0];
 }
 
-// ── File ingestion ────────────────────────────────────────────────
+// ── File ingestion ─────────────────────────────────────────────────
 function ingestFiles(fileList, zoneEl) {
   const incoming = [...fileList].filter(f => f.name.toLowerCase().endsWith('.tgs'));
   if (!incoming.length) { addMode = false; alert('No .tgs files found in the selection.'); return; }
 
   let arr;
   if (addMode) {
-    // Merge: append files not already present (dedup by name + size)
     addMode = false;
     const seen = new Set(pendingFiles.map(p => p.file.name + ':' + p.file.size));
     const novel = incoming.filter(f => !seen.has(f.name + ':' + f.size));
@@ -192,7 +171,6 @@ function ingestFiles(fileList, zoneEl) {
   if (activeZone && activeZone !== zoneEl) resetDropZone(activeZone);
   activeZone = zoneEl;
 
-  // Files zone gets an Add button; folder zone gets none
   const isFilesZone = zoneEl.id === 'dz-files';
   showFileList(zoneEl, pendingFiles.map(p => p.file), isFilesZone ? {
     onAdd: () => { addMode = true; document.getElementById('input-files').click(); },
@@ -206,263 +184,28 @@ setupDropZone(dzFolder, f => ingestFiles(f, dzFolder));
 document.getElementById('input-files').addEventListener('change',  e => ingestFiles(e.target.files, dzFiles));
 document.getElementById('input-folder').addEventListener('change', e => ingestFiles(e.target.files, dzFolder));
 
-// ── Lottie frame sampler ──────────────────────────────────────────
-
-/**
- * Render a Lottie animation to a sequence of ImageData frames.
- * Returns { frames: ImageData[], outputFps: number }
- */
-async function sampleFrames(lottieJson, opts, progEl) {
-  const { fps, width, height, maxFrames, range } = opts;
-  const animData = JSON.parse(lottieJson);
-  const animFps  = animData.fr || 30;
-  const outPoint = animData.op || 60;
-
-  const step      = Math.max(1, Math.round(animFps / fps));
-  const outputFps = animFps / step;
-
-  let frameNums = [];
-  for (let f = 0; f < outPoint; f += step) frameNums.push(f);
-
-  if (range) {
-    const [lo, hi] = range;
-    frameNums = frameNums.filter(f => f >= lo && f < hi);
-  }
-  if (maxFrames && frameNums.length > maxFrames) {
-    const s2 = Math.max(1, Math.floor(frameNums.length / maxFrames));
-    frameNums = frameNums.filter((_, i) => i % s2 === 0).slice(0, maxFrames);
-  }
-  if (!frameNums.length) throw new Error('No frames to render (check frame range / max-frames)');
-
-  const canvas = document.getElementById('render-canvas');
-  canvas.width  = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-  const container = document.createElement('div');
-  container.style.cssText =
-    `position:absolute;left:-9999px;width:${width}px;height:${height}px;overflow:hidden`;
-  document.body.appendChild(container);
-
-  const anim = lottie.loadAnimation({
-    container,
-    renderer: 'canvas',
-    loop: false,
-    autoplay: false,
-    animationData: animData,
-    rendererSettings: {
-      canvas,
-      clearCanvas: true,
-      preserveAspectRatio: 'xMidYMid meet',
-      progressiveLoad: false,
-    },
-  });
-
-  await new Promise((resolve, reject) => {
-    anim.addEventListener('DOMLoaded', resolve);
-    anim.addEventListener('error', reject);
-    setTimeout(reject, 5000);
-  });
-
-  const frames = [];
-  for (let i = 0; i < frameNums.length; i++) {
-    anim.goToAndStop(frameNums[i], true);
-    await tick();
-    frames.push(ctx.getImageData(0, 0, width, height));
-    if (progEl) progEl.style.width = Math.round((i + 1) / frameNums.length * 100) + '%';
-  }
-
-  anim.destroy();
-  container.remove();
-  return { frames, outputFps };
-}
-
-const tick = () => new Promise(r => setTimeout(r, 0));
-
-// ── GIF encoding (Rust WASM) ──────────────────────────────────────
-
-async function encodeGif(frames, width, height, outputFps) {
-  const delayCentisec = Math.max(1, Math.round(100 / outputFps));
-  const pixPerFrame   = width * height * 4;
-  const flat          = new Uint8Array(frames.length * pixPerFrame);
-  frames.forEach((f, i) => flat.set(f.data, i * pixPerFrame));
-  return wasm().tgs_encode_gif(flat, width, height, frames.length, delayCentisec);
-}
-
-// ── Animated WebP encoding (JS-side, RIFF/ANIM container) ─────────
-
-/**
- * Encode an array of ImageData frames to an animated WebP.
- *
- * Each frame is encoded by the browser's native canvas.toBlob('image/webp')
- * (hardware-accelerated, lossless VP8L with alpha). The resulting VP8L
- * bitstreams are then muxed into a RIFF/WEBP/ANIM container.
- */
-async function encodeWebP(frames, width, height, outputFps) {
-  const delayMs = Math.max(1, Math.round(1000 / outputFps));
-
-  // Encode every frame as a standalone WebP via a temporary canvas
-  const tmpCanvas = document.createElement('canvas');
-  tmpCanvas.width  = width;
-  tmpCanvas.height = height;
-  const tmpCtx = tmpCanvas.getContext('2d');
-
-  const frameWebPs = [];
-  for (const imgData of frames) {
-    tmpCtx.putImageData(imgData, 0, 0);
-    const blob = await new Promise(r => tmpCanvas.toBlob(r, 'image/webp'));
-    if (!blob) throw new Error('canvas.toBlob returned null — WebP encoding not supported in this browser');
-    frameWebPs.push(new Uint8Array(await blob.arrayBuffer()));
-  }
-
-  return muxAnimatedWebP(frameWebPs, width, height, delayMs);
-}
-
-/**
- * Mux an array of single-frame WebP files into an animated WebP.
- *
- * The RIFF structure:
- *   RIFF <size> WEBP
- *     VP8X <10 bytes>   — canvas dimensions + animation + alpha flags
- *     ANIM <6 bytes>    — background colour + loop count (0 = ∞)
- *     ANMF <N bytes>    — one per frame: position + duration + VP8/VP8L bitstream
- */
-function muxAnimatedWebP(frameWebPs, width, height, delayMs) {
-  // ── Low-level RIFF helpers ──────────────────────────────────────
-
-  const enc = new TextEncoder();
-
-  /** Concatenate a list of Uint8Arrays. */
-  function concat(parts) {
-    const total = parts.reduce((s, p) => s + p.length, 0);
-    const out = new Uint8Array(total);
-    let off = 0;
-    for (const p of parts) { out.set(p, off); off += p.length; }
-    return out;
-  }
-
-  /** Write a 32-bit unsigned integer LE. */
-  function u32(n) {
-    const b = new Uint8Array(4);
-    new DataView(b.buffer).setUint32(0, n >>> 0, true);
-    return b;
-  }
-
-  /** Write a 24-bit unsigned integer LE (3 bytes). */
-  function u24(n) {
-    return new Uint8Array([n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff]);
-  }
-
-  /**
-   * Wrap payload in a RIFF chunk: [tag(4)] [size(4 LE)] [payload] [pad?]
-   * Chunk size field is the payload length; if odd, one 0x00 pad byte is appended.
-   */
-  function riffChunk(tag, payload) {
-    const padded = payload.length & 1
-      ? concat([payload, new Uint8Array(1)])
-      : payload;
-    return concat([enc.encode(tag), u32(payload.length), padded]);
-  }
-
-  // ── Extract frame bitstream from a single-frame WebP ─────────────
-  // ANMF frame data must be: optional ALPH + VP8 or VP8L chunk(s).
-  // canvas.toBlob often returns extended WebP (RIFF WEBP VP8X …),
-  // so we walk the chunk list and collect only ALPH / VP8 / VP8L,
-  // skipping the VP8X wrapper which is invalid inside ANMF.
-  function extractFrameData(webpBytes) {
-    const sig = String.fromCharCode(...webpBytes.slice(0, 4));
-    const fmt = String.fromCharCode(...webpBytes.slice(8, 12));
-    if (sig !== 'RIFF' || fmt !== 'WEBP') throw new Error('Invalid WebP from toBlob');
-
-    const view = new DataView(webpBytes.buffer, webpBytes.byteOffset, webpBytes.byteLength);
-    const wanted = new Set(['VP8 ', 'VP8L', 'ALPH']);
-    const parts = [];
-    let offset = 12; // skip RIFF(4) + size(4) + WEBP(4)
-    while (offset + 8 <= webpBytes.length) {
-      const tag  = String.fromCharCode(...webpBytes.slice(offset, offset + 4));
-      const size = view.getUint32(offset + 4, true);
-      const padded = size + (size & 1);   // RIFF chunks are word-aligned
-      if (wanted.has(tag)) {
-        parts.push(webpBytes.slice(offset, offset + 8 + padded));
-      }
-      offset += 8 + padded;
-    }
-    if (parts.length === 0) throw new Error('No VP8/VP8L chunk found in frame WebP');
-    return concat(parts);
-  }
-
-  // ── VP8X chunk ─────────────────────────────────────────────────
-  // Byte 0: flags — bit 1 = animation, bit 4 = alpha (stickers have alpha)
-  // Bytes 1-3: reserved (0)
-  // Bytes 4-6: canvas width  − 1 (24-bit LE)
-  // Bytes 7-9: canvas height − 1 (24-bit LE)
-  const vp8xFlags = (1 << 1) | (1 << 4); // animation | alpha
-  const vp8xPayload = concat([
-    new Uint8Array([vp8xFlags, 0, 0, 0]),
-    u24(width  - 1),
-    u24(height - 1),
-  ]);
-  const vp8xChunk = riffChunk('VP8X', vp8xPayload);
-
-  // ── ANIM chunk ─────────────────────────────────────────────────
-  // Bytes 0-3: background colour RGBA (0 = transparent)
-  // Bytes 4-5: loop count (0 = infinite)
-  const animPayload = concat([new Uint8Array(4), new Uint8Array(2)]);
-  const animChunk   = riffChunk('ANIM', animPayload);
-
-  // ── ANMF chunks ────────────────────────────────────────────────
-  // Per frame:
-  //   Bytes 0-2:  frame X / 2 (24-bit LE)
-  //   Bytes 3-5:  frame Y / 2 (24-bit LE)
-  //   Bytes 6-8:  frame width  − 1 (24-bit LE)
-  //   Bytes 9-11: frame height − 1 (24-bit LE)
-  //   Bytes 12-14: duration in ms (24-bit LE)
-  //   Byte 15:    flags (bit 0 = no-blending, bit 1 = disposal)
-  //   Bytes 16+:  frame bitstream (VP8/VP8L/VP8X chunks)
-  const anmfChunks = frameWebPs.map(webpBytes => {
-    const frameData  = extractFrameData(webpBytes);
-    const anmfHeader = concat([
-      u24(0),              // frame X / 2
-      u24(0),              // frame Y / 2
-      u24(width  - 1),
-      u24(height - 1),
-      u24(delayMs),
-      new Uint8Array([0]), // flags: blend + no-disposal
-    ]);
-    return riffChunk('ANMF', concat([anmfHeader, frameData]));
-  });
-
-  // ── Final RIFF container ────────────────────────────────────────
-  const webpBody = concat([vp8xChunk, animChunk, ...anmfChunks]);
-  const riffBody = concat([enc.encode('WEBP'), webpBody]);
-  return concat([enc.encode('RIFF'), u32(riffBody.length), riffBody]);
-}
-
-// ── Batch conversion ─────────────────────────────────────────────
-
+// ── Conversion ─────────────────────────────────────────────────────
 window.convertAll = async function() {
   const statusEl  = document.getElementById('status-bar');
   const resultsEl = document.getElementById('results');
 
-  const format    = document.querySelector('input[name="fmt"]:checked').value; // 'gif' | 'webp'
-  const fps       = Math.max(1, parseInt(document.getElementById('opt-fps').value)     || 15);
-  const width     = Math.max(16, parseInt(document.getElementById('opt-width').value)  || 512);
-  const height    = Math.max(16, parseInt(document.getElementById('opt-height').value) || 512);
-  const maxFrames = parseInt(document.getElementById('opt-max-frames').value) || null;
-  const range     = parseRange(document.getElementById('opt-frames').value);
+  const format    = document.querySelector('input[name="fmt"]:checked').value;
+  const fps       = Math.max(1, parseFloat(document.getElementById('opt-fps').value)    || 15);
+  const width     = Math.max(16, parseInt(document.getElementById('opt-width').value)   || 512);
+  const height    = Math.max(16, parseInt(document.getElementById('opt-height').value)  || 512);
+  const maxFrames = parseInt(document.getElementById('opt-max-frames').value) || 0;
+  const [frameStart, frameEnd] = parseRange(document.getElementById('opt-frames').value);
 
   document.getElementById('btn-convert').disabled = true;
   resultsEl.innerHTML = '';
   outputResults = [];
 
-  if (format === 'gif') {
-    setStatus(statusEl, 'busy', 'Initialising WASM…');
-    try { await initWasm(); }
-    catch(e) {
-      setStatus(statusEl, 'failed', `WASM load failed: ${e.message}`);
-      document.getElementById('btn-convert').disabled = false;
-      return;
-    }
+  setStatus(statusEl, 'busy', 'Initialising WASM…');
+  try { await initWasm(); }
+  catch(e) {
+    setStatus(statusEl, 'failed', `WASM load failed: ${e.message}`);
+    document.getElementById('btn-convert').disabled = false;
+    return;
   }
 
   let done = 0, failed = 0;
@@ -471,37 +214,19 @@ window.convertAll = async function() {
     setStatus(statusEl, 'busy',
       `Converting ${done + failed + 1}/${pendingFiles.length}: ${item.name}`);
 
-    const cardId = `res-${done + failed}`;
     const card = document.createElement('div');
     card.className = 'result-item pending';
-    card.id = cardId;
     card.innerHTML = `
       <div class="result-icon">⏳</div>
-      <div class="result-body" style="width:100%">
+      <div class="result-body">
         <div class="result-name">${esc(item.name)}</div>
-        <div class="result-sub">Rendering frames…</div>
-        <div class="tgs-preview">
-          <div class="progress-bar-wrap" style="width:100%;margin-top:.4rem">
-            <div class="progress-bar-fill" id="prog-${cardId}" style="width:0%"></div>
-          </div>
-        </div>
+        <div class="result-sub">Rendering in Rust…</div>
       </div>`;
     resultsEl.appendChild(card);
 
     try {
-      const bytes      = await readFileBytes(item.file);
-      const lottieJson = (format === 'gif' ? wasm() : await initWasm()).tgs_decompress(bytes);
-      const progEl     = document.getElementById(`prog-${cardId}`);
-
-      const { frames, outputFps } = await sampleFrames(
-        lottieJson, { fps, width, height, maxFrames, range }, progEl);
-
-      let outBytes;
-      if (format === 'gif') {
-        outBytes = await encodeGif(frames, width, height, outputFps);
-      } else {
-        outBytes = await encodeWebP(frames, width, height, outputFps);
-      }
+      const bytes    = await readFileBytes(item.file);
+      const outBytes = wasm().tgs_convert(bytes, fps, width, height, maxFrames, frameStart, frameEnd, format);
 
       const outName = replaceExt(item.name, format);
       const mime    = format === 'gif' ? 'image/gif' : 'image/webp';

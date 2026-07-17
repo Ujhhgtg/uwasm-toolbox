@@ -1,8 +1,5 @@
 /* @ts-self-types="./uwasm_toolbox.d.ts" */
 
-/**
- * Result object returned by `ncm_convert`.
- */
 export class NcmResult {
     static __wrap(ptr) {
         const obj = Object.create(NcmResult.prototype);
@@ -21,7 +18,6 @@ export class NcmResult {
         wasm.__wbg_ncmresult_free(ptr, 0);
     }
     /**
-     * Raw decrypted audio bytes (FLAC or MP3).
      * @returns {Uint8Array}
      */
     get audio() {
@@ -31,7 +27,6 @@ export class NcmResult {
         return v1;
     }
     /**
-     * Embedded cover image bytes (JPEG or PNG). Empty if none.
      * @returns {Uint8Array}
      */
     get cover() {
@@ -41,7 +36,6 @@ export class NcmResult {
         return v1;
     }
     /**
-     * MIME type of the cover image (`"image/jpeg"` or `"image/png"`).
      * @returns {string}
      */
     get cover_mime() {
@@ -57,7 +51,6 @@ export class NcmResult {
         }
     }
     /**
-     * `"flac"` or `"mp3"`.
      * @returns {string}
      */
     get format() {
@@ -73,8 +66,6 @@ export class NcmResult {
         }
     }
     /**
-     * JSON string with keys: name, album, artist, bitrate, duration, format.
-     * Empty string if the file contains no metadata.
      * @returns {string}
      */
     get metadata_json() {
@@ -93,9 +84,6 @@ export class NcmResult {
 if (Symbol.dispose) NcmResult.prototype[Symbol.dispose] = NcmResult.prototype.free;
 
 /**
- * Decrypt a `.ncm` file.
- *
- * Returns an `NcmResult` on success, or throws a JS string error.
  * @param {Uint8Array} data
  * @returns {NcmResult}
  */
@@ -110,57 +98,42 @@ export function ncm_convert(data) {
 }
 
 /**
- * Decompress a `.tgs` file (gzip'd Lottie JSON) and return the JSON string.
+ * Convert a `.tgs` file to an animated GIF or lossless WebP entirely in Rust.
  *
- * The returned string should be passed to `lottie-web` for frame rendering.
+ * Parameters
+ * ----------
+ * data         — raw `.tgs` bytes (gzip-compressed or plain UTF-8 Lottie JSON)
+ * fps          — target output frame rate (clamped to animation's native fps)
+ * width        — output width in pixels
+ * height       — output height in pixels
+ * max_frames   — maximum number of frames (0 = unlimited)
+ * frame_start  — first source frame to include (0 = animation start)
+ * frame_end    — last source frame (exclusive, 0 = animation end)
+ * format       — `"gif"` or `"webp"`
+ *
+ * Returns the encoded file bytes, or throws a JS string error.
  * @param {Uint8Array} data
- * @returns {string}
- */
-export function tgs_decompress(data) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.tgs_decompress(ptr0, len0);
-        var ptr2 = ret[0];
-        var len2 = ret[1];
-        if (ret[3]) {
-            ptr2 = 0; len2 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred3_0 = ptr2;
-        deferred3_1 = len2;
-        return getStringFromWasm0(ptr2, len2);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-    }
-}
-
-/**
- * Encode a sequence of RGBA frames into an animated GIF.
- *
- * `frames_rgba` — flat buffer: `frame_count × height × width × 4` bytes (RGBA order).
- * `delay_cs`    — per-frame delay in centiseconds (e.g. `7` ≈ 15 fps).
- *
- * Returns the GIF file as a byte vector, or throws a JS string error.
- * @param {Uint8Array} frames_rgba
+ * @param {number} fps
  * @param {number} width
  * @param {number} height
- * @param {number} frame_count
- * @param {number} delay_cs
+ * @param {number} max_frames
+ * @param {number} frame_start
+ * @param {number} frame_end
+ * @param {string} format
  * @returns {Uint8Array}
  */
-export function tgs_encode_gif(frames_rgba, width, height, frame_count, delay_cs) {
-    const ptr0 = passArray8ToWasm0(frames_rgba, wasm.__wbindgen_malloc);
+export function tgs_convert(data, fps, width, height, max_frames, frame_start, frame_end, format) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.tgs_encode_gif(ptr0, len0, width, height, frame_count, delay_cs);
+    const ptr1 = passStringToWasm0(format, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.tgs_convert(ptr0, len0, fps, width, height, max_frames, frame_start, frame_end, ptr1, len1);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
-    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v2;
+    return v3;
 }
 function __wbg_get_imports() {
     const import0 = {
@@ -217,6 +190,43 @@ function passArray8ToWasm0(arg, malloc) {
     return ptr;
 }
 
+function passStringToWasm0(arg, malloc, realloc) {
+    if (realloc === undefined) {
+        const buf = cachedTextEncoder.encode(arg);
+        const ptr = malloc(buf.length, 1) >>> 0;
+        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
+        WASM_VECTOR_LEN = buf.length;
+        return ptr;
+    }
+
+    let len = arg.length;
+    let ptr = malloc(len, 1) >>> 0;
+
+    const mem = getUint8ArrayMemory0();
+
+    let offset = 0;
+
+    for (; offset < len; offset++) {
+        const code = arg.charCodeAt(offset);
+        if (code > 0x7F) break;
+        mem[ptr + offset] = code;
+    }
+    if (offset !== len) {
+        if (offset !== 0) {
+            arg = arg.slice(offset);
+        }
+        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
+        const ret = cachedTextEncoder.encodeInto(arg, view);
+
+        offset += ret.written;
+        ptr = realloc(ptr, len, offset, 1) >>> 0;
+    }
+
+    WASM_VECTOR_LEN = offset;
+    return ptr;
+}
+
 function takeFromExternrefTable0(idx) {
     const value = wasm.__wbindgen_externrefs.get(idx);
     wasm.__externref_table_dealloc(idx);
@@ -235,6 +245,19 @@ function decodeText(ptr, len) {
         numBytesDecoded = len;
     }
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
+}
+
+const cachedTextEncoder = new TextEncoder();
+
+if (!('encodeInto' in cachedTextEncoder)) {
+    cachedTextEncoder.encodeInto = function (arg, view) {
+        const buf = cachedTextEncoder.encode(arg);
+        view.set(buf);
+        return {
+            read: arg.length,
+            written: buf.length
+        };
+    };
 }
 
 let WASM_VECTOR_LEN = 0;
