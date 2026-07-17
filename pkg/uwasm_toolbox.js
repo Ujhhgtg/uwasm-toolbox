@@ -84,10 +84,6 @@ export class NcmResult {
 if (Symbol.dispose) NcmResult.prototype[Symbol.dispose] = NcmResult.prototype.free;
 
 /**
- * Decrypt a `.ncm` file, embed metadata and cover art, then return the result.
- *
- * If no cover art is embedded in the file, attempts to fetch it from the
- * NetEase CDN via the URL stored in the metadata (uses browser `fetch`).
  * @param {Uint8Array} data
  * @returns {Promise<NcmResult>}
  */
@@ -99,20 +95,6 @@ export function ncm_convert(data) {
 }
 
 /**
- * Convert a `.tgs` file to an animated GIF or lossless WebP entirely in Rust.
- *
- * Parameters
- * ----------
- * data         — raw `.tgs` bytes (gzip-compressed or plain UTF-8 Lottie JSON)
- * fps          — target output frame rate (clamped to animation's native fps)
- * width        — output width in pixels
- * height       — output height in pixels
- * max_frames   — maximum number of frames (0 = unlimited)
- * frame_start  — first source frame to include (0 = animation start)
- * frame_end    — last source frame (exclusive, 0 = animation end)
- * format       — `"gif"` or `"webp"`
- *
- * Returns the encoded file bytes, or throws a JS string error.
  * @param {Uint8Array} data
  * @param {number} fps
  * @param {number} width
@@ -202,6 +184,9 @@ function __wbg_get_imports() {
             const ret = arg0.done;
             return ret;
         },
+        __wbg_error_744744ff0c9861e6: function(arg0) {
+            console.error(arg0);
+        },
         __wbg_fetch_9dad4fe911207b37: function(arg0) {
             const ret = fetch(arg0);
             return ret;
@@ -239,6 +224,9 @@ function __wbg_get_imports() {
         __wbg_length_1f0964f4a5e2c6d8: function(arg0) {
             const ret = arg0.length;
             return ret;
+        },
+        __wbg_log_d267660666346fb3: function(arg0) {
+            console.log(arg0);
         },
         __wbg_ncmresult_new: function(arg0) {
             const ret = NcmResult.__wrap(arg0);
@@ -380,13 +368,16 @@ function __wbg_get_imports() {
             const ret = arg0.value;
             return ret;
         },
+        __wbg_warn_b1370d804fa3e259: function(arg0) {
+            console.warn(arg0);
+        },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 178, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 156, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_52a40a1bd5563bc2___convert__closures_____invoke___wasm_bindgen_52a40a1bd5563bc2___JsValue__core_9b3796e30d99ddb7___result__Result_____wasm_bindgen_52a40a1bd5563bc2___JsError___true_);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 251, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 242, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_52a40a1bd5563bc2___convert__closures_____invoke_______true_);
             return ret;
         },

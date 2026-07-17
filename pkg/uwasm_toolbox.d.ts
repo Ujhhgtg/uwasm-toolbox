@@ -12,30 +12,8 @@ export class NcmResult {
     readonly metadata_json: string;
 }
 
-/**
- * Decrypt a `.ncm` file, embed metadata and cover art, then return the result.
- *
- * If no cover art is embedded in the file, attempts to fetch it from the
- * NetEase CDN via the URL stored in the metadata (uses browser `fetch`).
- */
 export function ncm_convert(data: Uint8Array): Promise<NcmResult>;
 
-/**
- * Convert a `.tgs` file to an animated GIF or lossless WebP entirely in Rust.
- *
- * Parameters
- * ----------
- * data         — raw `.tgs` bytes (gzip-compressed or plain UTF-8 Lottie JSON)
- * fps          — target output frame rate (clamped to animation's native fps)
- * width        — output width in pixels
- * height       — output height in pixels
- * max_frames   — maximum number of frames (0 = unlimited)
- * frame_start  — first source frame to include (0 = animation start)
- * frame_end    — last source frame (exclusive, 0 = animation end)
- * format       — `"gif"` or `"webp"`
- *
- * Returns the encoded file bytes, or throws a JS string error.
- */
 export function tgs_convert(data: Uint8Array, fps: number, width: number, height: number, max_frames: number, frame_start: number, frame_end: number, format: string): Uint8Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
