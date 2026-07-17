@@ -216,7 +216,7 @@ window.convertAll = async function() {
 
     try {
       const bytes = await readFileBytes(item.file);
-      const ncmResult = mod.ncm_convert(bytes);
+      const ncmResult = await mod.ncm_convert(bytes);
 
       const fmt    = ncmResult.format;
       const audio  = ncmResult.audio;

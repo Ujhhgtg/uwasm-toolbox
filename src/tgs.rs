@@ -1,6 +1,7 @@
 use flate2::read::GzDecoder;
 use std::io::Read;
 
+use crate::clog;
 use rasterlottie::{Animation, RenderConfig, Renderer, Rgba8};
 
 // ---------------------------------------------------------------------------
@@ -46,14 +47,17 @@ pub struct ConvertOptions {
 
 /// Convert a TGS/Lottie JSON string to an animated GIF or WebP.
 pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8>, String> {
-    // Parse animation
     let anim = Animation::from_json_str(json)
         .map_err(|e| format!("Lottie parse error: {e}"))?;
 
-    // Compute frame schedule
     let source_fps = anim.frame_rate.max(1.0);
     let anim_start = anim.in_point.floor();
     let anim_end = anim.out_point.ceil().max(anim_start + 1.0);
+
+    crate::clog!(
+        "tgs: animation {}x{}  {:.0}fps  frames {:.0}–{:.0}",
+        anim.width, anim.height, source_fps, anim_start, anim_end
+    );
 
     let range_start = if opts.frame_start > 0 {
         (opts.frame_start as f32).clamp(anim_start, anim_end)
@@ -95,7 +99,6 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
         return Err("no frames to render (check frame range / max-frames)".to_string());
     }
 
-    // Compute render scale to fit the requested output size
     let anim_w = anim.width as f32;
     let anim_h = anim.height as f32;
     let scale = if anim_w > 0.0 && anim_h > 0.0 {
@@ -106,14 +109,17 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
         1.0
     };
 
+    clog!(
+        "tgs: rendering {} frames at {:.1}fps  scale={:.3}  output={}x{}",
+        frame_nums.len(), actual_fps, scale, opts.width, opts.height
+    );
+
     let config = RenderConfig::new(Rgba8::TRANSPARENT, scale);
 
-    // Prepare the animation once (caches hierarchy, path plans, etc.)
     let prepared = Renderer::default()
         .prepare(&anim)
         .map_err(|e| format!("prepare error: {e}"))?;
 
-    // Render all frames
     let frames: Vec<(u32, u32, Vec<u8>)> = frame_nums
         .iter()
         .map(|&f| {
@@ -129,6 +135,7 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
     }
 
     let (out_w, out_h) = (frames[0].0, frames[0].1);
+    crate::clog!("tgs: rendered {} frames at {}x{}", frames.len(), out_w, out_h);
 
     match format {
         "gif" => {

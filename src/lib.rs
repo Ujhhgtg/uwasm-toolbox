@@ -1,3 +1,4 @@
+pub mod log;
 mod ncm;
 mod tgs;
 
@@ -30,13 +31,21 @@ impl NcmResult {
     pub fn cover_mime(&self) -> String { self.cover_mime.clone() }
 }
 
-/// Decrypt a `.ncm` file, embed metadata and cover art, then return the result.
-///
-/// If no cover art is embedded in the file, attempts to fetch it from the
-/// NetEase CDN via the URL stored in the metadata (uses browser `fetch`).
 #[wasm_bindgen]
 pub async fn ncm_convert(data: &[u8]) -> Result<NcmResult, JsValue> {
-    let decoded = ncm::decode(data).map_err(|e| JsValue::from_str(&e))?;
+    clog!("ncm_convert: {} bytes", data.len());
+
+    let decoded = ncm::decode(data).map_err(|e| {
+        cerror!("ncm decode failed: {e}");
+        JsValue::from_str(&e)
+    })?;
+
+    clog!(
+        "ncm decode ok: format={} cover={} bytes pic_url={}",
+        decoded.format,
+        decoded.cover.len(),
+        if decoded.album_pic_url.is_empty() { "(none)" } else { &decoded.album_pic_url }
+    );
 
     let audio = ncm::apply_metadata_async(
         decoded.audio,
@@ -46,44 +55,25 @@ pub async fn ncm_convert(data: &[u8]) -> Result<NcmResult, JsValue> {
     )
     .await;
 
+    clog!("ncm metadata applied: audio={} bytes", audio.len());
+
     let metadata_json = match &decoded.metadata {
         Some(m) => serde_json::to_string(m).unwrap_or_default(),
         None => String::new(),
     };
-
     let cover_mime = if decoded.cover.is_empty() {
         String::new()
     } else {
         ncm::cover_mime(&decoded.cover).to_string()
     };
 
-    Ok(NcmResult {
-        audio,
-        format: decoded.format,
-        metadata_json,
-        cover: decoded.cover,
-        cover_mime,
-    })
+    Ok(NcmResult { audio, format: decoded.format, metadata_json, cover: decoded.cover, cover_mime })
 }
 
 // ---------------------------------------------------------------------------
 // TGS
 // ---------------------------------------------------------------------------
 
-/// Convert a `.tgs` file to an animated GIF or lossless WebP entirely in Rust.
-///
-/// Parameters
-/// ----------
-/// data         — raw `.tgs` bytes (gzip-compressed or plain UTF-8 Lottie JSON)
-/// fps          — target output frame rate (clamped to animation's native fps)
-/// width        — output width in pixels
-/// height       — output height in pixels
-/// max_frames   — maximum number of frames (0 = unlimited)
-/// frame_start  — first source frame to include (0 = animation start)
-/// frame_end    — last source frame (exclusive, 0 = animation end)
-/// format       — `"gif"` or `"webp"`
-///
-/// Returns the encoded file bytes, or throws a JS string error.
 #[wasm_bindgen]
 pub fn tgs_convert(
     data: &[u8],
@@ -95,14 +85,21 @@ pub fn tgs_convert(
     frame_end: u32,
     format: &str,
 ) -> Result<Vec<u8>, JsValue> {
-    let json = tgs::decompress(data).map_err(|e| JsValue::from_str(&e))?;
-    let opts = tgs::ConvertOptions {
-        fps,
-        width,
-        height,
-        max_frames,
-        frame_start,
-        frame_end,
-    };
-    tgs::convert(&json, &opts, format).map_err(|e| JsValue::from_str(&e))
+    clog!("tgs_convert: {} bytes  fps={fps}  size={width}x{height}  format={format}", data.len());
+
+    let json = tgs::decompress(data).map_err(|e| {
+        cerror!("tgs decompress failed: {e}");
+        JsValue::from_str(&e)
+    })?;
+
+    clog!("tgs decompressed: {} chars of Lottie JSON", json.len());
+
+    let opts = tgs::ConvertOptions { fps, width, height, max_frames, frame_start, frame_end };
+    let result = tgs::convert(&json, &opts, format).map_err(|e| {
+        cerror!("tgs convert failed: {e}");
+        JsValue::from_str(&e)
+    })?;
+
+    clog!("tgs_convert done: {} bytes of {format}", result.len());
+    Ok(result)
 }

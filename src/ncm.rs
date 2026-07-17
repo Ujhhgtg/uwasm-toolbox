@@ -1,5 +1,6 @@
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
+use crate::{clog, cwarn};
 use aes::Aes128Dec;
 use aes::cipher::{BlockCipherDecrypt, KeyInit};
 use base64::Engine;
@@ -255,20 +256,28 @@ pub async fn apply_metadata_async(
     embedded_cover: &[u8],
     pic_url: &str,
 ) -> Vec<u8> {
-    let Some(meta) = meta else { return audio };
+    let Some(meta) = meta else {
+        clog!("ncm: no metadata, skipping tag write");
+        return audio;
+    };
 
-    // Resolve cover: prefer embedded, fall back to remote fetch
     let cover: Vec<u8> = if !embedded_cover.is_empty() {
+        clog!("ncm: using embedded cover ({} bytes)", embedded_cover.len());
         embedded_cover.to_vec()
     } else if !pic_url.is_empty() {
-        fetch_bytes(pic_url).await.unwrap_or_default()
+        clog!("ncm: fetching remote cover from {}", pic_url);
+        match fetch_bytes(pic_url).await {
+            Ok(bytes) => { clog!("ncm: fetched {} bytes of cover art", bytes.len()); bytes }
+            Err(e)    => { cwarn!("ncm: cover fetch failed: {e}"); Vec::new() }
+        }
     } else {
+        clog!("ncm: no cover art available");
         Vec::new()
     };
 
     match try_apply_metadata(&audio, meta, &cover) {
-        Ok(tagged) => tagged,
-        Err(_) => audio,
+        Ok(tagged) => { clog!("ncm: tags written successfully"); tagged }
+        Err(e)     => { cwarn!("ncm: lofty tag write failed: {e}"); audio }
     }
 }
 
