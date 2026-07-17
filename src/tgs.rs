@@ -167,6 +167,9 @@ fn encode_gif(
             let mut rgba = pixels.clone();
             let mut frame = gif::Frame::from_rgba_speed(w, h, &mut rgba, 10);
             frame.delay = delay_cs;
+            // Dispose to background before each frame so transparent pixels
+            // in frame N don't reveal frame N-1 content underneath.
+            frame.dispose = gif::DisposalMethod::Background;
             encoder
                 .write_frame(&frame)
                 .map_err(|e| format!("gif write frame: {e}"))?;
@@ -298,7 +301,10 @@ fn mux_animated_webp(
         anmf_payload.extend_from_slice(&u24le(width - 1));
         anmf_payload.extend_from_slice(&u24le(height - 1));
         anmf_payload.extend_from_slice(&u24le(delay_ms));
-        anmf_payload.push(0x00); // flags: blend, no-dispose
+        // Blending method bit (6) = 1 → overwrite (do not alpha-blend onto
+        // previous frame). Without this, transparent pixels reveal the
+        // prior frame's content and frames accumulate visually.
+        anmf_payload.push(0x02); // bits[1]=1 → no-blend/overwrite, dispose=0
         anmf_payload.extend_from_slice(&frame_data);
         anmf_chunks.push(riff_chunk(b"ANMF", &anmf_payload));
     }
