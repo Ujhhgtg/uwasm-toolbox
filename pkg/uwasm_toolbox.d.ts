@@ -12,7 +12,13 @@ export class NcmResult {
     readonly metadata_json: string;
 }
 
-export function ncm_convert(data: Uint8Array): NcmResult;
+/**
+ * Decrypt a `.ncm` file, embed metadata and cover art, then return the result.
+ *
+ * If no cover art is embedded in the file, attempts to fetch it from the
+ * NetEase CDN via the URL stored in the metadata (uses browser `fetch`).
+ */
+export function ncm_convert(data: Uint8Array): Promise<NcmResult>;
 
 /**
  * Convert a `.tgs` file to an animated GIF or lossless WebP entirely in Rust.
@@ -37,18 +43,24 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_ncmresult_free: (a: number, b: number) => void;
-    readonly ncm_convert: (a: number, b: number) => [number, number, number];
+    readonly ncm_convert: (a: number, b: number) => any;
     readonly ncmresult_audio: (a: number) => [number, number];
     readonly ncmresult_cover: (a: number) => [number, number];
     readonly ncmresult_cover_mime: (a: number) => [number, number];
     readonly ncmresult_format: (a: number) => [number, number];
     readonly ncmresult_metadata_json: (a: number) => [number, number];
     readonly tgs_convert: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number, number];
-    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly wasm_bindgen_52a40a1bd5563bc2___convert__closures_____invoke___wasm_bindgen_52a40a1bd5563bc2___JsValue__core_9b3796e30d99ddb7___result__Result_____wasm_bindgen_52a40a1bd5563bc2___JsError___true_: (a: number, b: number, c: any) => [number, number];
+    readonly wasm_bindgen_52a40a1bd5563bc2___convert__closures_____invoke___js_sys_7b008e29d3e68904___Function_fn_wasm_bindgen_52a40a1bd5563bc2___JsValue_____wasm_bindgen_52a40a1bd5563bc2___sys__Undefined___js_sys_7b008e29d3e68904___Function_fn_wasm_bindgen_52a40a1bd5563bc2___JsValue_____wasm_bindgen_52a40a1bd5563bc2___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
+    readonly wasm_bindgen_52a40a1bd5563bc2___convert__closures_____invoke_______true_: (a: number, b: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
-    readonly __externref_table_dealloc: (a: number) => void;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_exn_store: (a: number) => void;
+    readonly __externref_table_alloc: () => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_destroy_closure: (a: number, b: number) => void;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }
 
