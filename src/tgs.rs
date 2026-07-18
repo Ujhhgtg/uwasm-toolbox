@@ -19,8 +19,10 @@
 use flate2::read::GzDecoder;
 use std::io::Read;
 
-use crate::clog;
-use rasterlottie::{Animation, RenderConfig, Renderer, Rgba8};
+use crate::{clog, cwarn};
+use rasterlottie::{
+    Animation, RenderConfig, Renderer, Rgba8, SupportProfile, analyze_animation_with_profile,
+};
 
 // ---------------------------------------------------------------------------
 // TGS decompression
@@ -152,7 +154,28 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
 
     let config = RenderConfig::new(Rgba8::TRANSPARENT, scale);
 
-    let prepared = Renderer::default()
+    // Warn when the animation uses features outside the strict target-corpus
+    // profile (layer effects, expressions, unknown shape items like merge-paths
+    // "mm").  We still attempt rendering with a lenient profile: the renderer
+    // skips effects it cannot apply, falls back to static keyframe values for
+    // unresolvable expressions, and ignores unknown shape items.
+    let strict_report = analyze_animation_with_profile(&anim, SupportProfile::target_corpus());
+    if !strict_report.is_supported() {
+        cwarn!(
+            "tgs: animation has {} unsupported feature(s) — rendering with best-effort approximation ({})",
+            strict_report.len(),
+            strict_report
+        );
+    }
+
+    let lenient = SupportProfile {
+        allow_effects: true,
+        allow_expressions: true,
+        allow_unknown_shape_items: true,
+        ..SupportProfile::target_corpus()
+    };
+
+    let prepared = Renderer::new(lenient)
         .prepare(&anim)
         .map_err(|e| format!("prepare error: {e}"))?;
 
