@@ -9,7 +9,10 @@
 //!    uniformly decimate with `step = round(source_fps / target_fps)`.
 //!    Optionally cap total frames via `max_frames` with another uniform
 //!    subsampling pass.
-//! 4. Render each frame to RGBA via rasterlottie's `prepared.render_frame`.
+//! 4. **Streaming** render→encode: render one frame to RGBA, encode it into
+//!    the output immediately, then release the RGBA buffer before the next
+//!    frame.  Peak RGBA memory is O(one frame) instead of O(all frames),
+//!    which is critical when many workers run in parallel.
 //! 5. Encode as animated GIF (via `gif` crate) or lossless animated WebP
 //!    (VP8L via `image-webp`, with a custom RIFF/VP8X/ANIM/ANMF muxer
 //!    since the `image` crate's encoder doesn't support animation).
@@ -75,8 +78,8 @@ pub struct ConvertOptions {
 ///      `step = round(source_fps / target_fps)`.
 ///   4. If `max_frames` is set and the decimated count exceeds it,
 ///      subsample again with a uniform stride.
-///   5. Render each frame to RGBA via `prepared.render_frame`.
-///   6. Encode as GIF or WebP (animated).
+///   5. Stream render→encode: render one frame to RGBA, encode it
+///      into the output immediately, free the RGBA buffer, repeat.
 pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8>, String> {
     let anim = Animation::from_json_str(json).map_err(|e| format!("Lottie parse error: {e}"))?;
 
@@ -179,24 +182,20 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
         .prepare(&anim)
         .map_err(|e| format!("prepare error: {e}"))?;
 
-    let frames: Vec<(u32, u32, Vec<u8>)> = frame_nums
-        .iter()
-        .map(|&f| {
-            let rf = prepared
-                .render_frame(f, config)
-                .map_err(|e| format!("render frame {f}: {e}"))?;
-            Ok((rf.width, rf.height, rf.pixels))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+    // Render the first frame to obtain actual output dimensions, then
+    // stream render→encode for the remaining frames.  This avoids holding
+    // all RGBA buffers in memory at once (90 frames × ~1 MB = ~90 MB per
+    // worker; with 16 parallel Chrome workers that's ~1.4 GB just for
+    // unencoded pixels).  Peak RGBA usage is now O(one frame).
+    let first_rf = prepared
+        .render_frame(frame_nums[0], config)
+        .map_err(|e| format!("render frame {}: {e}", frame_nums[0]))?;
+    let out_w = first_rf.width;
+    let out_h = first_rf.height;
 
-    if frames.is_empty() {
-        return Err("rendering produced no frames".to_string());
-    }
-
-    let (out_w, out_h) = (frames[0].0, frames[0].1);
-    crate::clog!(
-        "tgs: rendered {} frames at {}x{}",
-        frames.len(),
+    clog!(
+        "tgs: streaming encode {} frames at {}x{}",
+        frame_nums.len(),
         out_w,
         out_h
     );
@@ -204,77 +203,73 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
     match format {
         "gif" => {
             let delay_cs = ((100.0 / actual_fps).round() as u16).max(1);
-            encode_gif(&frames, out_w, out_h, delay_cs)
+            let (w, h) = (out_w as u16, out_h as u16);
+
+            let mut output = Vec::new();
+            let mut encoder =
+                gif::Encoder::new(&mut output, w, h, &[]).map_err(|e| format!("gif init: {e}"))?;
+            encoder
+                .set_repeat(gif::Repeat::Infinite)
+                .map_err(|e| format!("gif repeat: {e}"))?;
+
+            // Encode first frame — pass owned pixels directly; no clone
+            // needed because from_rgba_speed takes &mut [u8] in-place.
+            {
+                let mut rgba = first_rf.pixels;
+                let mut frame = gif::Frame::from_rgba_speed(w, h, &mut rgba, 10);
+                frame.delay = delay_cs;
+                frame.dispose = gif::DisposalMethod::Background;
+                encoder
+                    .write_frame(&frame)
+                    .map_err(|e| format!("gif write frame: {e}"))?;
+                // rgba (~1 MB) freed here
+            }
+
+            for &f in &frame_nums[1..] {
+                let rf = prepared
+                    .render_frame(f, config)
+                    .map_err(|e| format!("render frame {f}: {e}"))?;
+                let mut rgba = rf.pixels;
+                let mut frame = gif::Frame::from_rgba_speed(w, h, &mut rgba, 10);
+                frame.delay = delay_cs;
+                frame.dispose = gif::DisposalMethod::Background;
+                encoder
+                    .write_frame(&frame)
+                    .map_err(|e| format!("gif write frame: {e}"))?;
+                // rgba freed here
+            }
+
+            drop(encoder);
+            Ok(output)
         }
         "webp" => {
             let delay_ms = ((1000.0 / actual_fps).round() as u32).max(1);
-            encode_webp_anim(&frames, out_w, out_h, delay_ms)
+
+            // Encode RGBA→VP8L one frame at a time, freeing the raw pixels
+            // immediately after each encode.  We still need all encoded
+            // VP8L chunks in memory for the muxer, but a compressed VP8L
+            // frame is far smaller than the raw RGBA buffer it came from.
+            let mut frame_webps: Vec<Vec<u8>> = Vec::with_capacity(frame_nums.len());
+            frame_webps.push(encode_webp_frame(&first_rf.pixels, out_w, out_h)?);
+            drop(first_rf); // free first frame's RGBA now
+
+            for &f in &frame_nums[1..] {
+                let rf = prepared
+                    .render_frame(f, config)
+                    .map_err(|e| format!("render frame {f}: {e}"))?;
+                frame_webps.push(encode_webp_frame(&rf.pixels, out_w, out_h)?);
+                // rf.pixels freed here
+            }
+
+            mux_animated_webp(&frame_webps, out_w, out_h, delay_ms)
         }
         other => Err(format!("unknown format: {other}")),
     }
 }
 
 // ---------------------------------------------------------------------------
-// GIF encoder
+// WebP frame encoder + animated muxer
 // ---------------------------------------------------------------------------
-
-/// Encode a sequence of RGBA frames as an animated GIF.
-///
-/// Dispose to background before each frame so transparent pixels
-/// in frame N don't reveal frame N-1 content underneath.
-fn encode_gif(
-    frames: &[(u32, u32, Vec<u8>)],
-    width: u32,
-    height: u32,
-    delay_cs: u16,
-) -> Result<Vec<u8>, String> {
-    let w = width as u16;
-    let h = height as u16;
-    let mut output = Vec::new();
-    {
-        let mut encoder =
-            gif::Encoder::new(&mut output, w, h, &[]).map_err(|e| format!("gif init: {e}"))?;
-        encoder
-            .set_repeat(gif::Repeat::Infinite)
-            .map_err(|e| format!("gif repeat: {e}"))?;
-
-        for (_, _, pixels) in frames {
-            let mut rgba = pixels.clone();
-            let mut frame = gif::Frame::from_rgba_speed(w, h, &mut rgba, 10);
-            frame.delay = delay_cs;
-            // Dispose to background before each frame so transparent pixels
-            // in frame N don't reveal frame N-1 content underneath.
-            frame.dispose = gif::DisposalMethod::Background;
-            encoder
-                .write_frame(&frame)
-                .map_err(|e| format!("gif write frame: {e}"))?;
-        }
-    }
-    Ok(output)
-}
-
-// ---------------------------------------------------------------------------
-// Animated WebP encoder (pure Rust, VP8L lossless)
-// ---------------------------------------------------------------------------
-
-/// Encode a sequence of RGBA frames as an animated lossless WebP.
-///
-/// Each frame is independently encoded as VP8L via `image::codecs::webp`,
-/// then `mux_animated_webp` assembles the RIFF/VP8X/ANIM/ANMF container.
-fn encode_webp_anim(
-    frames: &[(u32, u32, Vec<u8>)],
-    width: u32,
-    height: u32,
-    delay_ms: u32,
-) -> Result<Vec<u8>, String> {
-    // Encode every frame as a standalone lossless WebP
-    let frame_webps: Vec<Vec<u8>> = frames
-        .iter()
-        .map(|(_, _, pixels)| encode_webp_frame(pixels, width, height))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    mux_animated_webp(&frame_webps, width, height, delay_ms)
-}
 
 /// Encode one RGBA frame as a static lossless WebP file (VP8L).
 ///
@@ -403,4 +398,50 @@ fn mux_animated_webp(
     out.extend_from_slice(&riff_size.to_le_bytes());
     out.extend_from_slice(&webp_body);
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Native benchmark (cargo test bench_tgs --release -- --nocapture)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+    use std::time::Instant;
+
+    const TGS_PATH: &str = "/home/ujhhgtg/Downloads/AyuGram Desktop/duck/1.tgs";
+    const WARMUP: usize = 2;
+    const RUNS: usize = 5;
+
+    fn opts() -> ConvertOptions {
+        ConvertOptions {
+            fps: 30.0,
+            width: 512,
+            height: 512,
+            max_frames: 0,
+            frame_start: 0,
+            frame_end: 0,
+        }
+    }
+
+    #[test]
+    fn bench_tgs() {
+        let data = std::fs::read(TGS_PATH).expect("test asset missing");
+        let json = decompress(&data).expect("decompress");
+
+        for fmt in ["gif", "webp"] {
+            // warmup
+            for _ in 0..WARMUP {
+                convert(&json, &opts(), fmt).unwrap();
+            }
+            // measure
+            let t = Instant::now();
+            for _ in 0..RUNS {
+                convert(&json, &opts(), fmt).unwrap();
+            }
+            let total_ms = t.elapsed().as_millis();
+            let avg_ms = total_ms / RUNS as u128;
+            println!("[bench] {fmt:>4}  avg={avg_ms}ms  total={total_ms}ms over {RUNS} runs");
+        }
+    }
 }

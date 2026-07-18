@@ -39,5 +39,5 @@ image = { version = "0.25", default-features = false, features = ["webp"] }
 serde = { version = "1", features = ["derive"] }
 
 [profile.release]
-opt-level = "z"
+opt-level = "s"
 lto = true
