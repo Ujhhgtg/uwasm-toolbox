@@ -1,262 +1,428 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NCM Converter — µWasm Toolbox</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>NCM Converter — µWasm Toolbox</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        />
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <nav class="topbar">
+            <a class="topbar-back" href="index.html">
+                <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                >
+                    <path
+                        d="M3.828 7H14v2H3.828l3.586 3.586L6 14 0 8l6-6 1.414 1.414L3.828 7z"
+                    />
+                </svg>
+                Toolbox
+            </a>
+            <span class="topbar-sep"></span>
+            <span class="topbar-title">NCM Converter</span>
+            <button class="topbar-btn" id="clear-cache-btn" title="Delete cached WASM binaries and reload">↺ Clear cache</button>
+        </nav>
 
-<nav class="topbar">
-  <a class="topbar-back" href="index.html">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M3.828 7H14v2H3.828l3.586 3.586L6 14 0 8l6-6 1.414 1.414L3.828 7z"/>
-    </svg>
-    Toolbox
-  </a>
-  <span class="topbar-sep"></span>
-  <span class="topbar-title">NCM Converter</span>
-</nav>
+        <main class="page">
+            <header class="tool-header">
+                <div class="tool-header-icon">🎵</div>
+                <div>
+                    <h1>NCM Converter</h1>
+                    <p>
+                        Decrypt Netease Cloud Music <code>.ncm</code> files →
+                        FLAC or MP3
+                    </p>
+                </div>
+            </header>
 
-<main class="page">
-  <header class="tool-header">
-    <div class="tool-header-icon">🎵</div>
-    <div>
-      <h1>NCM Converter</h1>
-      <p>Decrypt Netease Cloud Music <code>.ncm</code> files → FLAC or MP3</p>
-    </div>
-  </header>
+            <!-- ── Input tabs ── -->
+            <div class="section-label">Input</div>
+            <div class="drop-tabs">
+                <button
+                    class="drop-tab active"
+                    id="tab-files"
+                    onclick="switchTab('files')"
+                >
+                    📄 Files
+                </button>
+                <button
+                    class="drop-tab"
+                    id="tab-folder"
+                    onclick="switchTab('folder')"
+                >
+                    📁 Folder
+                </button>
+            </div>
 
-  <!-- ── Input tabs ── -->
-  <div class="section-label">Input</div>
-  <div class="drop-tabs">
-    <button class="drop-tab active" id="tab-files" onclick="switchTab('files')">📄 Files</button>
-    <button class="drop-tab"        id="tab-folder" onclick="switchTab('folder')">📁 Folder</button>
-  </div>
+            <!-- Files drop zone -->
+            <div class="drop-zone" id="dz-files">
+                <input type="file" id="input-files" multiple accept=".ncm" />
+                <div class="dz-prompt">
+                    <div class="drop-zone-icon">🎵</div>
+                    <div class="drop-zone-label">
+                        <strong>Drop .ncm files here</strong> or click to browse
+                    </div>
+                    <div class="drop-zone-hint">Supports multiple files</div>
+                </div>
+                <div class="dz-list hidden"></div>
+            </div>
 
-  <!-- Files drop zone -->
-  <div class="drop-zone" id="dz-files">
-    <input type="file" id="input-files" multiple accept=".ncm" />
-    <div class="dz-prompt">
-      <div class="drop-zone-icon">🎵</div>
-      <div class="drop-zone-label"><strong>Drop .ncm files here</strong> or click to browse</div>
-      <div class="drop-zone-hint">Supports multiple files</div>
-    </div>
-    <div class="dz-list hidden"></div>
-  </div>
+            <!-- Folder drop zone (hidden by default) -->
+            <div class="drop-zone hidden" id="dz-folder">
+                <input type="file" id="input-folder" webkitdirectory />
+                <div class="dz-prompt">
+                    <div class="drop-zone-icon">📁</div>
+                    <div class="drop-zone-label">
+                        <strong>Drop a folder here</strong> or click to browse
+                    </div>
+                    <div class="drop-zone-hint">
+                        All .ncm files inside will be listed
+                    </div>
+                </div>
+                <div class="dz-list hidden"></div>
+            </div>
 
-  <!-- Folder drop zone (hidden by default) -->
-  <div class="drop-zone hidden" id="dz-folder">
-    <input type="file" id="input-folder" webkitdirectory />
-    <div class="dz-prompt">
-      <div class="drop-zone-icon">📁</div>
-      <div class="drop-zone-label"><strong>Drop a folder here</strong> or click to browse</div>
-      <div class="drop-zone-hint">All .ncm files inside will be listed</div>
-    </div>
-    <div class="dz-list hidden"></div>
-  </div>
+            <hr class="divider" />
 
-  <hr class="divider" />
+            <!-- ── Controls (mirrors ncmx CLI flags) ── -->
+            <div class="section-label">Options</div>
 
-  <!-- ── Controls (mirrors ncmx CLI flags) ── -->
-  <div class="section-label">Options</div>
+            <div class="controls-grid">
+                <div class="ctrl">
+                    <label for="opt-outdir">Output directory name</label>
+                    <input
+                        type="text"
+                        id="opt-outdir"
+                        placeholder="same as input (downloads)"
+                        title="When set, downloaded files use this as a subfolder prefix in the filename"
+                    />
+                </div>
+            </div>
 
-  <div class="controls-grid">
-    <div class="ctrl">
-      <label for="opt-outdir">Output directory name</label>
-      <input type="text" id="opt-outdir" placeholder="same as input (downloads)"
-             title="When set, downloaded files use this as a subfolder prefix in the filename" />
-    </div>
-  </div>
+            <div
+                style="
+                    margin-top: 1rem;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.6rem;
+                "
+            >
+                <div class="toggle-row">
+                    <label class="toggle" for="opt-recursive">
+                        <input type="checkbox" id="opt-recursive" />
+                        <span class="toggle-track"></span>
+                        <span class="toggle-knob"></span>
+                    </label>
+                    <label for="opt-recursive"
+                        >Recursive
+                        <span style="color: var(--text-2); font-size: 0.8rem"
+                            >(–r · include subdirectories)</span
+                        ></label
+                    >
+                </div>
+                <div class="toggle-row">
+                    <label class="toggle" for="opt-metadata">
+                        <input type="checkbox" id="opt-metadata" checked />
+                        <span class="toggle-track"></span>
+                        <span class="toggle-knob"></span>
+                    </label>
+                    <label for="opt-metadata"
+                        >Show metadata &amp; cover art</label
+                    >
+                </div>
+            </div>
 
-  <div style="margin-top:1rem; display:flex; flex-direction:column; gap:.6rem;">
-    <div class="toggle-row">
-      <label class="toggle" for="opt-recursive">
-        <input type="checkbox" id="opt-recursive" />
-        <span class="toggle-track"></span>
-        <span class="toggle-knob"></span>
-      </label>
-      <label for="opt-recursive">Recursive <span style="color:var(--text-2);font-size:.8rem">(–r · include subdirectories)</span></label>
-    </div>
-    <div class="toggle-row">
-      <label class="toggle" for="opt-metadata">
-        <input type="checkbox" id="opt-metadata" checked />
-        <span class="toggle-track"></span>
-        <span class="toggle-knob"></span>
-      </label>
-      <label for="opt-metadata">Show metadata &amp; cover art</label>
-    </div>
-  </div>
+            <!-- ── Action ── -->
+            <div class="btn-row">
+                <button
+                    class="btn btn-primary"
+                    id="btn-convert"
+                    disabled
+                    onclick="convertAll()"
+                >
+                    ▶ Convert
+                </button>
+                <button
+                    class="btn btn-ghost"
+                    id="btn-clear"
+                    onclick="clearAll()"
+                >
+                    Clear
+                </button>
+                <button
+                    class="btn btn-ghost"
+                    id="btn-download-all"
+                    style="display: none"
+                    onclick="downloadAll()"
+                >
+                    ⬇ Download all
+                </button>
+            </div>
 
-  <!-- ── Action ── -->
-  <div class="btn-row">
-    <button class="btn btn-primary" id="btn-convert" disabled onclick="convertAll()">
-      ▶ Convert
-    </button>
-    <button class="btn btn-ghost" id="btn-clear" onclick="clearAll()">Clear</button>
-    <button class="btn btn-ghost" id="btn-download-all" style="display:none" onclick="downloadAll()">
-      ⬇ Download all
-    </button>
-  </div>
+            <div class="status-bar idle" id="status-bar">
+                ○ <span>No files loaded</span>
+            </div>
 
-  <div class="status-bar idle" id="status-bar">○ <span>No files loaded</span></div>
+            <!-- ── Results ── -->
+            <div class="results" id="results"></div>
+        </main>
 
-  <!-- ── Results ── -->
-  <div class="results" id="results"></div>
-</main>
+        <script type="module">
+            import {
+                readFileBytes,
+                downloadBytes,
+                replaceExt,
+                fmtBytes,
+                fmtDuration,
+                setStatus,
+                setupDropZone,
+                showFileList,
+                resetDropZone,
+                WorkerPool,
+                buildZip,
+                clearWasmCache
+            } from "./common.js";
 
-<script type="module">
-import { readFileBytes, downloadBytes, replaceExt, fmtBytes, fmtDuration, setStatus, setupDropZone, showFileList, resetDropZone, WorkerPool, buildZip } from './common.js';
+            // ── Topbar cache-bust button ──────────────────────────────────────
+            {
+                const btn = document.getElementById("clear-cache-btn");
+                btn.addEventListener("click", async () => {
+                    btn.disabled = true;
+                    btn.textContent = "↺ Clearing…";
+                    await clearWasmCache();
+                    btn.disabled = false;
+                    btn.textContent = "↺ Clear cache";
+                });
+            }
 
-// ── State ────────────────────────────────────────────────────────
-let pendingFiles = []; // {file, name, relativePath}
-let results      = []; // {file, name, result|error}
-let activeZone   = null; // drop zone currently showing a file list
-let addMode      = false; // true when the Add button triggered the file picker
+            // ── State ────────────────────────────────────────────────────────
+            let pendingFiles = []; // {file, name, relativePath}
+            let results = []; // {file, name, result|error}
+            let activeZone = null; // drop zone currently showing a file list
+            let addMode = false; // true when the Add button triggered the file picker
 
-// ── Tab switching ────────────────────────────────────────────────
-window.switchTab = function(tab) {
-  document.getElementById('tab-files').classList.toggle('active',  tab === 'files');
-  document.getElementById('tab-folder').classList.toggle('active', tab === 'folder');
-  document.getElementById('dz-files').classList.toggle('hidden',   tab !== 'files');
-  document.getElementById('dz-folder').classList.toggle('hidden',  tab !== 'folder');
-};
+            // ── Tab switching ────────────────────────────────────────────────
+            window.switchTab = function (tab) {
+                document
+                    .getElementById("tab-files")
+                    .classList.toggle("active", tab === "files");
+                document
+                    .getElementById("tab-folder")
+                    .classList.toggle("active", tab === "folder");
+                document
+                    .getElementById("dz-files")
+                    .classList.toggle("hidden", tab !== "files");
+                document
+                    .getElementById("dz-folder")
+                    .classList.toggle("hidden", tab !== "folder");
+            };
 
-// ── File ingestion ────────────────────────────────────────────────
-function ingestFiles(fileList, zoneEl) {
-  // Filter to .ncm files only; in recursive mode accept nested files,
-  // in non-recursive mode only files at depth 1 (no subdirs).
-  const recursive = document.getElementById('opt-recursive').checked;
-  const incoming = [...fileList].filter(f => {
-    if (!f.name.toLowerCase().endsWith('.ncm')) return false;
-    const parts = (f.webkitRelativePath || f.name).split('/');
-    if (!recursive && parts.length > 2) return false;
-    return true;
-  });
-  if (!incoming.length) { addMode = false; alert('No .ncm files found in the selection.'); return; }
+            // ── File ingestion ────────────────────────────────────────────────
+            function ingestFiles(fileList, zoneEl) {
+                // Filter to .ncm files only; in recursive mode accept nested files,
+                // in non-recursive mode only files at depth 1 (no subdirs).
+                const recursive =
+                    document.getElementById("opt-recursive").checked;
+                const incoming = [...fileList].filter((f) => {
+                    if (!f.name.toLowerCase().endsWith(".ncm")) return false;
+                    const parts = (f.webkitRelativePath || f.name).split("/");
+                    if (!recursive && parts.length > 2) return false;
+                    return true;
+                });
+                if (!incoming.length) {
+                    addMode = false;
+                    alert("No .ncm files found in the selection.");
+                    return;
+                }
 
-  let arr;
-  if (addMode) {
-    // Merge mode: append files not already present, deduplicating by
-    // name + size so the same file can't appear twice.
-    addMode = false;
-    const seen = new Set(pendingFiles.map(p => p.file.name + ':' + p.file.size));
-    const novel = incoming.filter(f => !seen.has(f.name + ':' + f.size));
-    if (!novel.length) return; // nothing new
-    arr = [...pendingFiles, ...novel.map(f => ({
-      file: f, name: f.name, relativePath: f.webkitRelativePath || f.name,
-    }))];
-  } else {
-    arr = incoming.map(f => ({
-      file: f, name: f.name, relativePath: f.webkitRelativePath || f.name,
-    }));
-  }
+                let arr;
+                if (addMode) {
+                    // Merge mode: append files not already present, deduplicating by
+                    // name + size so the same file can't appear twice.
+                    addMode = false;
+                    const seen = new Set(
+                        pendingFiles.map((p) => p.file.name + ":" + p.file.size)
+                    );
+                    const novel = incoming.filter(
+                        (f) => !seen.has(f.name + ":" + f.size)
+                    );
+                    if (!novel.length) return; // nothing new
+                    arr = [
+                        ...pendingFiles,
+                        ...novel.map((f) => ({
+                            file: f,
+                            name: f.name,
+                            relativePath: f.webkitRelativePath || f.name
+                        }))
+                    ];
+                } else {
+                    arr = incoming.map((f) => ({
+                        file: f,
+                        name: f.name,
+                        relativePath: f.webkitRelativePath || f.name
+                    }));
+                }
 
-  pendingFiles = arr;
-  results = [];
-  document.getElementById('results').innerHTML = '';
-  document.getElementById('btn-download-all').style.display = 'none';
-  setStatus(document.getElementById('status-bar'), 'idle',
-    `${pendingFiles.length} file${pendingFiles.length > 1 ? 's' : ''} ready`);
-  document.getElementById('btn-convert').disabled = false;
+                pendingFiles = arr;
+                results = [];
+                document.getElementById("results").innerHTML = "";
+                document.getElementById("btn-download-all").style.display =
+                    "none";
+                setStatus(
+                    document.getElementById("status-bar"),
+                    "idle",
+                    `${pendingFiles.length} file${pendingFiles.length > 1 ? "s" : ""} ready`
+                );
+                document.getElementById("btn-convert").disabled = false;
 
-  if (activeZone && activeZone !== zoneEl) resetDropZone(activeZone);
-  activeZone = zoneEl;
+                if (activeZone && activeZone !== zoneEl)
+                    resetDropZone(activeZone);
+                activeZone = zoneEl;
 
-  // Files tab shows an Add button for incremental selection; folder
-  // tab replaces the entire selection (no merge).
-  const isFilesZone = zoneEl.id === 'dz-files';
-  showFileList(zoneEl, pendingFiles.map(p => p.file), isFilesZone ? {
-    onAdd: () => { addMode = true; document.getElementById('input-files').click(); },
-  } : {});
-}
+                // Files tab shows an Add button for incremental selection; folder
+                // tab replaces the entire selection (no merge).
+                const isFilesZone = zoneEl.id === "dz-files";
+                showFileList(
+                    zoneEl,
+                    pendingFiles.map((p) => p.file),
+                    isFilesZone
+                        ? {
+                              onAdd: () => {
+                                  addMode = true;
+                                  document
+                                      .getElementById("input-files")
+                                      .click();
+                              }
+                          }
+                        : {}
+                );
+            }
 
-const dzFiles  = document.getElementById('dz-files');
-const dzFolder = document.getElementById('dz-folder');
-setupDropZone(dzFiles,  f => ingestFiles(f, dzFiles));
-setupDropZone(dzFolder, f => ingestFiles(f, dzFolder));
-document.getElementById('input-files').addEventListener('change',  e => ingestFiles(e.target.files, dzFiles));
-document.getElementById('input-folder').addEventListener('change', e => ingestFiles(e.target.files, dzFolder));
+            const dzFiles = document.getElementById("dz-files");
+            const dzFolder = document.getElementById("dz-folder");
+            setupDropZone(dzFiles, (f) => ingestFiles(f, dzFiles));
+            setupDropZone(dzFolder, (f) => ingestFiles(f, dzFolder));
+            document
+                .getElementById("input-files")
+                .addEventListener("change", (e) =>
+                    ingestFiles(e.target.files, dzFiles)
+                );
+            document
+                .getElementById("input-folder")
+                .addEventListener("change", (e) =>
+                    ingestFiles(e.target.files, dzFolder)
+                );
 
-// ── Conversion ───────────────────────────────────────────────────
-window.convertAll = async function() {
-  // Each file gets its own worker task. The pool dispatches
-  // concurrently up to `hardwareConcurrency` workers. Results arrive
-  // out of order but are placed into stable pre-created card slots.
-  const statusEl  = document.getElementById('status-bar');
-  const resultsEl = document.getElementById('results');
-  const showMeta  = document.getElementById('opt-metadata').checked;
+            // ── Conversion ───────────────────────────────────────────────────
+            window.convertAll = async function () {
+                // Each file gets its own worker task. The pool dispatches
+                // concurrently up to `hardwareConcurrency` workers. Results arrive
+                // out of order but are placed into stable pre-created card slots.
+                const statusEl = document.getElementById("status-bar");
+                const resultsEl = document.getElementById("results");
+                const showMeta =
+                    document.getElementById("opt-metadata").checked;
 
-  document.getElementById('btn-convert').disabled = true;
-  resultsEl.innerHTML = '';
-  results = [];
+                document.getElementById("btn-convert").disabled = true;
+                resultsEl.innerHTML = "";
+                results = [];
 
-  const workerCount = Math.min(pendingFiles.length, navigator.hardwareConcurrency || 4);
-  setStatus(statusEl, 'busy', `Starting ${workerCount} worker${workerCount > 1 ? 's' : ''}…`);
-  const pool = new WorkerPool(workerCount);
+                const workerCount = Math.min(
+                    pendingFiles.length,
+                    navigator.hardwareConcurrency || 4
+                );
+                setStatus(
+                    statusEl,
+                    "busy",
+                    `Starting ${workerCount} worker${workerCount > 1 ? "s" : ""}…`
+                );
+                const pool = new WorkerPool(workerCount);
 
-  let done = 0, failed = 0;
+                let done = 0,
+                    failed = 0;
 
-  // Pre-create result cards in file-order so that even though
-  // workers complete out of order, the visible list stays stable.
-  const cards = pendingFiles.map((item, i) => {
-    const card = document.createElement('div');
-    card.className = 'result-item pending';
-    card.innerHTML = `
+                // Pre-create result cards in file-order so that even though
+                // workers complete out of order, the visible list stays stable.
+                const cards = pendingFiles.map((item, i) => {
+                    const card = document.createElement("div");
+                    card.className = "result-item pending";
+                    card.innerHTML = `
       <div class="result-icon">⏳</div>
       <div class="result-body">
         <div class="result-name">${esc(item.name)}</div>
         <div class="result-sub">Queued…</div>
       </div>`;
-    resultsEl.appendChild(card);
-    return card;
-  });
+                    resultsEl.appendChild(card);
+                    return card;
+                });
 
-  // Dispatch all files to the pool concurrently
-  const tasks = pendingFiles.map(async (item, i) => {
-    cards[i].querySelector('.result-sub').textContent = 'Converting…';
-    try {
-      const bytes = await readFileBytes(item.file);
-      // Transfer the buffer — zero-copy into the worker
-      const r = await pool.run({ type: 'ncm', data: bytes.buffer }, [bytes.buffer]);
+                // Dispatch all files to the pool concurrently
+                const tasks = pendingFiles.map(async (item, i) => {
+                    cards[i].querySelector(".result-sub").textContent =
+                        "Converting…";
+                    try {
+                        const bytes = await readFileBytes(item.file);
+                        // Transfer the buffer — zero-copy into the worker
+                        const r = await pool.run(
+                            { type: "ncm", data: bytes.buffer },
+                            [bytes.buffer]
+                        );
 
-      const audio     = new Uint8Array(r.audio);
-      const cover     = new Uint8Array(r.cover);
-      const fmt       = r.format;
-      const metaRaw   = r.metadata_json;
-      const meta      = metaRaw ? JSON.parse(metaRaw) : null;
-      const outName   = replaceExt(item.name, fmt);
-      const audioMime = fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
+                        const audio = new Uint8Array(r.audio);
+                        const cover = new Uint8Array(r.cover);
+                        const fmt = r.format;
+                        const metaRaw = r.metadata_json;
+                        const meta = metaRaw ? JSON.parse(metaRaw) : null;
+                        const outName = replaceExt(item.name, fmt);
+                        const audioMime =
+                            fmt === "flac" ? "audio/flac" : "audio/mpeg";
 
-      results[i] = { name: outName, bytes: audio, mime: audioMime };
+                        results[i] = {
+                            name: outName,
+                            bytes: audio,
+                            mime: audioMime
+                        };
 
-      let metaHtml = '';
-      if (showMeta && meta) {
-        const coverHtml = cover.length
-          ? `<img class="meta-cover" src="${blobUrl(cover, r.cover_mime)}" alt="cover" />`
-          : `<div class="meta-cover-placeholder">🎵</div>`;
-        const badges = [
-          meta.format  ? `<span class="badge badge-format">${meta.format.toUpperCase()}</span>` : '',
-          meta.bitrate ? `<span class="badge badge-bitrate">${(meta.bitrate/1000).toFixed(0)} kbps</span>` : '',
-          meta.duration? `<span class="badge badge-dur">${fmtDuration(meta.duration)}</span>` : '',
-        ].filter(Boolean).join('');
-        metaHtml = `
+                        let metaHtml = "";
+                        if (showMeta && meta) {
+                            const coverHtml = cover.length
+                                ? `<img class="meta-cover" src="${blobUrl(cover, r.cover_mime)}" alt="cover" />`
+                                : `<div class="meta-cover-placeholder">🎵</div>`;
+                            const badges = [
+                                meta.format
+                                    ? `<span class="badge badge-format">${meta.format.toUpperCase()}</span>`
+                                    : "",
+                                meta.bitrate
+                                    ? `<span class="badge badge-bitrate">${(meta.bitrate / 1000).toFixed(0)} kbps</span>`
+                                    : "",
+                                meta.duration
+                                    ? `<span class="badge badge-dur">${fmtDuration(meta.duration)}</span>`
+                                    : ""
+                            ]
+                                .filter(Boolean)
+                                .join("");
+                            metaHtml = `
           <div class="meta-card">
             ${coverHtml}
             <div class="meta-info">
               <div class="meta-title">${esc(meta.name || outName)}</div>
-              <div class="meta-artist">${esc(meta.artist || '—')}</div>
-              <div class="meta-album">${esc(meta.album || '')}</div>
+              <div class="meta-artist">${esc(meta.artist || "—")}</div>
+              <div class="meta-album">${esc(meta.album || "")}</div>
               <div class="meta-badges">${badges}</div>
             </div>
           </div>`;
-      }
+                        }
 
-      cards[i].className = 'result-item success';
-      cards[i].innerHTML = `
+                        cards[i].className = "result-item success";
+                        cards[i].innerHTML = `
         <div class="result-icon">✅</div>
         <div class="result-body">
           <div class="result-name">${esc(outName)}</div>
@@ -266,63 +432,82 @@ window.convertAll = async function() {
         <div class="result-actions">
           <button class="btn btn-ghost" onclick="dlOne(${i})">⬇ Download</button>
         </div>`;
-      done++;
-    } catch(e) {
-      cards[i].className = 'result-item error';
-      cards[i].innerHTML = `
+                        done++;
+                    } catch (e) {
+                        cards[i].className = "result-item error";
+                        cards[i].innerHTML = `
         <div class="result-icon">❌</div>
         <div class="result-body">
           <div class="result-name">${esc(item.name)}</div>
           <div class="result-sub">${esc(String(e))}</div>
         </div>`;
-      failed++;
-    }
-    const total = done + failed;
-    setStatus(statusEl, 'busy', `Converting… ${total}/${pendingFiles.length}`);
-  });
+                        failed++;
+                    }
+                    const total = done + failed;
+                    setStatus(
+                        statusEl,
+                        "busy",
+                        `Converting… ${total}/${pendingFiles.length}`
+                    );
+                });
 
-  await Promise.all(tasks);
-  pool.terminate();
+                await Promise.all(tasks);
+                pool.terminate();
 
-  const msg = failed
-    ? `Done: ${done} converted, ${failed} failed`
-    : `Done: ${done} file${done > 1 ? 's' : ''} converted`;
-  setStatus(statusEl, failed ? 'failed' : 'done', msg);
-  document.getElementById('btn-convert').disabled = false;
-  if (results.filter(Boolean).length > 1) document.getElementById('btn-download-all').style.display = '';
-};
+                const msg = failed
+                    ? `Done: ${done} converted, ${failed} failed`
+                    : `Done: ${done} file${done > 1 ? "s" : ""} converted`;
+                setStatus(statusEl, failed ? "failed" : "done", msg);
+                document.getElementById("btn-convert").disabled = false;
+                if (results.filter(Boolean).length > 1)
+                    document.getElementById("btn-download-all").style.display =
+                        "";
+            };
 
-// ── Download helpers ──────────────────────────────────────────────
-window.dlOne = function(idx) {
-  const r = results[idx];
-  if (r) downloadBytes(r.bytes, r.name, r.mime);
-};
+            // ── Download helpers ──────────────────────────────────────────────
+            window.dlOne = function (idx) {
+                const r = results[idx];
+                if (r) downloadBytes(r.bytes, r.name, r.mime);
+            };
 
-window.downloadAll = function() {
-  const valid = results.filter(Boolean);
-  const zip = buildZip(valid.map(r => ({ name: r.name, bytes: r.bytes })));
-  downloadBytes(zip, 'ncm-converted.zip', 'application/zip');
-};
+            window.downloadAll = function () {
+                const valid = results.filter(Boolean);
+                const zip = buildZip(
+                    valid.map((r) => ({ name: r.name, bytes: r.bytes }))
+                );
+                downloadBytes(zip, "ncm-converted.zip", "application/zip");
+            };
 
-window.clearAll = function() {
-  pendingFiles = [];
-  results = [];
-  document.getElementById('results').innerHTML = '';
-  document.getElementById('btn-convert').disabled = true;
-  document.getElementById('btn-download-all').style.display = 'none';
-  document.getElementById('input-files').value = '';
-  document.getElementById('input-folder').value = '';
-  if (activeZone) { resetDropZone(activeZone); activeZone = null; }
-  setStatus(document.getElementById('status-bar'), 'idle', 'No files loaded');
-};
+            window.clearAll = function () {
+                pendingFiles = [];
+                results = [];
+                document.getElementById("results").innerHTML = "";
+                document.getElementById("btn-convert").disabled = true;
+                document.getElementById("btn-download-all").style.display =
+                    "none";
+                document.getElementById("input-files").value = "";
+                document.getElementById("input-folder").value = "";
+                if (activeZone) {
+                    resetDropZone(activeZone);
+                    activeZone = null;
+                }
+                setStatus(
+                    document.getElementById("status-bar"),
+                    "idle",
+                    "No files loaded"
+                );
+            };
 
-// ── Utilities ─────────────────────────────────────────────────────
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-function blobUrl(bytes, mime) {
-  return URL.createObjectURL(new Blob([bytes], { type: mime }));
-}
-</script>
-</body>
+            // ── Utilities ─────────────────────────────────────────────────────
+            function esc(s) {
+                return String(s)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            }
+            function blobUrl(bytes, mime) {
+                return URL.createObjectURL(new Blob([bytes], { type: mime }));
+            }
+        </script>
+    </body>
 </html>

@@ -1,252 +1,516 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TGS Converter — µWasm Toolbox</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
-  <link rel="stylesheet" href="style.css" />
-  <style>
-    .fmt-group { display:flex; gap:.5rem; flex-wrap:wrap; }
-    .fmt-radio  { display:none; }
-    .fmt-label  {
-      padding:.45rem 1.1rem; border:1px solid var(--border); border-radius:var(--radius);
-      font-size:.85rem; font-weight:600; cursor:pointer; color:var(--text-2);
-      transition:all var(--transition); user-select:none;
-    }
-    .fmt-radio:checked + .fmt-label { border-color:var(--accent); background:var(--accent-dim); color:var(--accent-h); }
-    .fmt-label:hover { border-color:var(--text-2); color:var(--text); }
-  </style>
-</head>
-<body>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>TGS Converter — µWasm Toolbox</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        />
+        <link rel="stylesheet" href="style.css" />
+        <style>
+            .fmt-group {
+                display: flex;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+            .fmt-radio {
+                display: none;
+            }
+            .fmt-label {
+                padding: 0.45rem 1.1rem;
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                font-size: 0.85rem;
+                font-weight: 600;
+                cursor: pointer;
+                color: var(--text-2);
+                transition: all var(--transition);
+                user-select: none;
+            }
+            .fmt-radio:checked + .fmt-label {
+                border-color: var(--accent);
+                background: var(--accent-dim);
+                color: var(--accent-h);
+            }
+            .fmt-label:hover {
+                border-color: var(--text-2);
+                color: var(--text);
+            }
+        </style>
+    </head>
+    <body>
+        <nav class="topbar">
+            <a class="topbar-back" href="index.html">
+                <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                >
+                    <path
+                        d="M3.828 7H14v2H3.828l3.586 3.586L6 14 0 8l6-6 1.414 1.414L3.828 7z"
+                    />
+                </svg>
+                Toolbox
+            </a>
+            <span class="topbar-sep"></span>
+            <span class="topbar-title">TGS Converter</span>
+            <button class="topbar-btn" id="clear-cache-btn" title="Delete cached WASM binaries and reload">↺ Clear cache</button>
+        </nav>
 
-<nav class="topbar">
-  <a class="topbar-back" href="index.html">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M3.828 7H14v2H3.828l3.586 3.586L6 14 0 8l6-6 1.414 1.414L3.828 7z"/>
-    </svg>
-    Toolbox
-  </a>
-  <span class="topbar-sep"></span>
-  <span class="topbar-title">TGS Converter</span>
-</nav>
+        <main class="page">
+            <header class="tool-header">
+                <div class="tool-header-icon">🎞️</div>
+                <div>
+                    <h1>TGS Converter</h1>
+                    <p>
+                        Convert Telegram animated stickers <code>.tgs</code> to
+                        animated GIF or lossless WebP — rendered in Rust/WASM
+                    </p>
+                </div>
+            </header>
 
-<main class="page">
-  <header class="tool-header">
-    <div class="tool-header-icon">🎞️</div>
-    <div>
-      <h1>TGS Converter</h1>
-      <p>Convert Telegram animated stickers <code>.tgs</code> to animated GIF or lossless WebP — rendered in Rust/WASM</p>
-    </div>
-  </header>
+            <!-- ── Input tabs ── -->
+            <div class="section-label">Input</div>
+            <div class="drop-tabs">
+                <button
+                    class="drop-tab active"
+                    id="tab-files"
+                    onclick="switchTab('files')"
+                >
+                    📄 Files
+                </button>
+                <button
+                    class="drop-tab"
+                    id="tab-folder"
+                    onclick="switchTab('folder')"
+                >
+                    📁 Folder
+                </button>
+            </div>
 
-  <!-- ── Input tabs ── -->
-  <div class="section-label">Input</div>
-  <div class="drop-tabs">
-    <button class="drop-tab active" id="tab-files"  onclick="switchTab('files')">📄 Files</button>
-    <button class="drop-tab"        id="tab-folder" onclick="switchTab('folder')">📁 Folder</button>
-  </div>
+            <div class="drop-zone" id="dz-files">
+                <input type="file" id="input-files" multiple accept=".tgs" />
+                <div class="dz-prompt">
+                    <div class="drop-zone-icon">🎞️</div>
+                    <div class="drop-zone-label">
+                        <strong>Drop .tgs files here</strong> or click to browse
+                    </div>
+                    <div class="drop-zone-hint">Supports multiple files</div>
+                </div>
+                <div class="dz-list hidden"></div>
+            </div>
 
-  <div class="drop-zone" id="dz-files">
-    <input type="file" id="input-files" multiple accept=".tgs" />
-    <div class="dz-prompt">
-      <div class="drop-zone-icon">🎞️</div>
-      <div class="drop-zone-label"><strong>Drop .tgs files here</strong> or click to browse</div>
-      <div class="drop-zone-hint">Supports multiple files</div>
-    </div>
-    <div class="dz-list hidden"></div>
-  </div>
+            <div class="drop-zone hidden" id="dz-folder">
+                <input type="file" id="input-folder" webkitdirectory />
+                <div class="dz-prompt">
+                    <div class="drop-zone-icon">📁</div>
+                    <div class="drop-zone-label">
+                        <strong>Drop a folder here</strong> or click to browse
+                    </div>
+                    <div class="drop-zone-hint">
+                        All .tgs files inside will be listed
+                    </div>
+                </div>
+                <div class="dz-list hidden"></div>
+            </div>
 
-  <div class="drop-zone hidden" id="dz-folder">
-    <input type="file" id="input-folder" webkitdirectory />
-    <div class="dz-prompt">
-      <div class="drop-zone-icon">📁</div>
-      <div class="drop-zone-label"><strong>Drop a folder here</strong> or click to browse</div>
-      <div class="drop-zone-hint">All .tgs files inside will be listed</div>
-    </div>
-    <div class="dz-list hidden"></div>
-  </div>
+            <hr class="divider" />
 
-  <hr class="divider" />
+            <!-- ── Controls ── -->
+            <div class="section-label">Options</div>
 
-  <!-- ── Controls ── -->
-  <div class="section-label">Options</div>
+            <div class="ctrl" style="margin-bottom: 1rem">
+                <label
+                    >Output format
+                    <span style="font-size: 0.75rem; font-weight: 400"
+                        >(--webp)</span
+                    ></label
+                >
+                <div class="fmt-group" style="margin-top: 0.4rem">
+                    <input
+                        class="fmt-radio"
+                        type="radio"
+                        name="fmt"
+                        id="fmt-gif"
+                        value="gif"
+                        checked
+                    />
+                    <label class="fmt-label" for="fmt-gif">🖼 GIF</label>
+                    <input
+                        class="fmt-radio"
+                        type="radio"
+                        name="fmt"
+                        id="fmt-webp"
+                        value="webp"
+                    />
+                    <label class="fmt-label" for="fmt-webp"
+                        >✨ WebP (lossless)</label
+                    >
+                </div>
+            </div>
 
-  <div class="ctrl" style="margin-bottom:1rem">
-    <label>Output format <span style="font-size:.75rem;font-weight:400">(--webp)</span></label>
-    <div class="fmt-group" style="margin-top:.4rem">
-      <input class="fmt-radio" type="radio" name="fmt" id="fmt-gif"  value="gif"  checked />
-      <label class="fmt-label" for="fmt-gif">🖼 GIF</label>
-      <input class="fmt-radio" type="radio" name="fmt" id="fmt-webp" value="webp" />
-      <label class="fmt-label" for="fmt-webp">✨ WebP (lossless)</label>
-    </div>
-  </div>
+            <div class="controls-grid">
+                <div class="ctrl">
+                    <label for="opt-fps"
+                        >FPS
+                        <span style="font-size: 0.75rem; font-weight: 400"
+                            >(--fps, default 15)</span
+                        ></label
+                    >
+                    <input
+                        type="number"
+                        id="opt-fps"
+                        value="15"
+                        min="1"
+                        max="60"
+                        step="1"
+                    />
+                </div>
+                <div class="ctrl">
+                    <label for="opt-width"
+                        >Width px
+                        <span style="font-size: 0.75rem; font-weight: 400"
+                            >(--width, default 512)</span
+                        ></label
+                    >
+                    <input
+                        type="number"
+                        id="opt-width"
+                        value="512"
+                        min="16"
+                        max="2048"
+                        step="8"
+                    />
+                </div>
+                <div class="ctrl">
+                    <label for="opt-height"
+                        >Height px
+                        <span style="font-size: 0.75rem; font-weight: 400"
+                            >(--height, default 512)</span
+                        ></label
+                    >
+                    <input
+                        type="number"
+                        id="opt-height"
+                        value="512"
+                        min="16"
+                        max="2048"
+                        step="8"
+                    />
+                </div>
+                <div class="ctrl">
+                    <label for="opt-max-frames"
+                        >Max frames
+                        <span style="font-size: 0.75rem; font-weight: 400"
+                            >(--max-frames)</span
+                        ></label
+                    >
+                    <input
+                        type="number"
+                        id="opt-max-frames"
+                        placeholder="unlimited"
+                        min="1"
+                        max="9999"
+                        step="1"
+                    />
+                </div>
+                <div class="ctrl">
+                    <label for="opt-frames"
+                        >Frame range
+                        <span style="font-size: 0.75rem; font-weight: 400"
+                            >(--frames, e.g. 30-90)</span
+                        ></label
+                    >
+                    <input
+                        type="text"
+                        id="opt-frames"
+                        placeholder="e.g. 30-90"
+                    />
+                </div>
+            </div>
 
-  <div class="controls-grid">
-    <div class="ctrl">
-      <label for="opt-fps">FPS <span style="font-size:.75rem;font-weight:400">(--fps, default 15)</span></label>
-      <input type="number" id="opt-fps" value="15" min="1" max="60" step="1" />
-    </div>
-    <div class="ctrl">
-      <label for="opt-width">Width px <span style="font-size:.75rem;font-weight:400">(--width, default 512)</span></label>
-      <input type="number" id="opt-width" value="512" min="16" max="2048" step="8" />
-    </div>
-    <div class="ctrl">
-      <label for="opt-height">Height px <span style="font-size:.75rem;font-weight:400">(--height, default 512)</span></label>
-      <input type="number" id="opt-height" value="512" min="16" max="2048" step="8" />
-    </div>
-    <div class="ctrl">
-      <label for="opt-max-frames">Max frames <span style="font-size:.75rem;font-weight:400">(--max-frames)</span></label>
-      <input type="number" id="opt-max-frames" placeholder="unlimited" min="1" max="9999" step="1" />
-    </div>
-    <div class="ctrl">
-      <label for="opt-frames">Frame range <span style="font-size:.75rem;font-weight:400">(--frames, e.g. 30-90)</span></label>
-      <input type="text" id="opt-frames" placeholder="e.g. 30-90" />
-    </div>
-  </div>
+            <!-- ── Action ── -->
+            <div class="btn-row">
+                <button
+                    class="btn btn-primary"
+                    id="btn-convert"
+                    disabled
+                    onclick="convertAll()"
+                >
+                    ▶ Convert
+                </button>
+                <button
+                    class="btn btn-ghost"
+                    id="btn-clear"
+                    onclick="clearAll()"
+                >
+                    Clear
+                </button>
+                <button
+                    class="btn btn-ghost"
+                    id="btn-dl-all"
+                    style="display: none"
+                    onclick="downloadAll()"
+                >
+                    ⬇ Download all
+                </button>
+            </div>
 
-  <!-- ── Action ── -->
-  <div class="btn-row">
-    <button class="btn btn-primary" id="btn-convert" disabled onclick="convertAll()">▶ Convert</button>
-    <button class="btn btn-ghost"   id="btn-clear"   onclick="clearAll()">Clear</button>
-    <button class="btn btn-ghost"   id="btn-dl-all"  style="display:none" onclick="downloadAll()">⬇ Download all</button>
-  </div>
+            <div class="status-bar idle" id="status-bar">
+                ○ <span>No files loaded</span>
+            </div>
+            <div class="results" id="results"></div>
+        </main>
 
-  <div class="status-bar idle" id="status-bar">○ <span>No files loaded</span></div>
-  <div class="results" id="results"></div>
-</main>
+        <script type="module">
+            import {
+                readFileBytes,
+                downloadBytes,
+                replaceExt,
+                fmtBytes,
+                setStatus,
+                setupDropZone,
+                showFileList,
+                resetDropZone,
+                WorkerPool,
+                buildZip,
+                clearWasmCache
+            } from "./common.js";
 
-<script type="module">
-import { readFileBytes, downloadBytes, replaceExt, fmtBytes,
-         setStatus, setupDropZone, showFileList, resetDropZone, WorkerPool, buildZip } from './common.js';
+            // ── Topbar cache-bust button ──────────────────────────────────────
+            {
+                const btn = document.getElementById("clear-cache-btn");
+                btn.addEventListener("click", async () => {
+                    btn.disabled = true;
+                    btn.textContent = "↺ Clearing…";
+                    await clearWasmCache();
+                    btn.disabled = false;
+                    btn.textContent = "↺ Clear cache";
+                });
+            }
 
-// ── State ──────────────────────────────────────────────────────────
-let pendingFiles  = [];
-let outputResults = [];
-let activeZone    = null;
-let addMode       = false;
+            // ── State ──────────────────────────────────────────────────────────
+            let pendingFiles = [];
+            let outputResults = [];
+            let activeZone = null;
+            let addMode = false;
 
-// ── Tab switching ──────────────────────────────────────────────────
-window.switchTab = function(tab) {
-  document.getElementById('tab-files').classList.toggle('active',  tab === 'files');
-  document.getElementById('tab-folder').classList.toggle('active', tab === 'folder');
-  document.getElementById('dz-files').classList.toggle('hidden',   tab !== 'files');
-  document.getElementById('dz-folder').classList.toggle('hidden',  tab !== 'folder');
-};
+            // ── Tab switching ──────────────────────────────────────────────────
+            window.switchTab = function (tab) {
+                document
+                    .getElementById("tab-files")
+                    .classList.toggle("active", tab === "files");
+                document
+                    .getElementById("tab-folder")
+                    .classList.toggle("active", tab === "folder");
+                document
+                    .getElementById("dz-files")
+                    .classList.toggle("hidden", tab !== "files");
+                document
+                    .getElementById("dz-folder")
+                    .classList.toggle("hidden", tab !== "folder");
+            };
 
-// ── Frame range parsing ────────────────────────────────────────────
-// Parse a "start-end" or "start" frame range string.
-// Returns [inclusive_start, exclusive_end]; a bare number N → [N, N+1].
-// Empty or invalid input → [0, 0] (use animation defaults).
-function parseRange(s) {
-  if (!s || !s.trim()) return [0, 0];
-  const parts = s.trim().split('-');
-  if (parts.length === 1) { const v = parseInt(parts[0]); return [v, v + 1]; }
-  if (parts.length === 2) return [parts[0] ? parseInt(parts[0]) : 0, parts[1] ? parseInt(parts[1]) : 0];
-  return [0, 0];
-}
+            // ── Frame range parsing ────────────────────────────────────────────
+            // Parse a "start-end" or "start" frame range string.
+            // Returns [inclusive_start, exclusive_end]; a bare number N → [N, N+1].
+            // Empty or invalid input → [0, 0] (use animation defaults).
+            function parseRange(s) {
+                if (!s || !s.trim()) return [0, 0];
+                const parts = s.trim().split("-");
+                if (parts.length === 1) {
+                    const v = parseInt(parts[0]);
+                    return [v, v + 1];
+                }
+                if (parts.length === 2)
+                    return [
+                        parts[0] ? parseInt(parts[0]) : 0,
+                        parts[1] ? parseInt(parts[1]) : 0
+                    ];
+                return [0, 0];
+            }
 
-// ── File ingestion ─────────────────────────────────────────────────
-function ingestFiles(fileList, zoneEl) {
-  // Filter to .tgs files only; no recursive mode needed (stickers are
-  // always single files).
-  const incoming = [...fileList].filter(f => f.name.toLowerCase().endsWith('.tgs'));
-  if (!incoming.length) { addMode = false; alert('No .tgs files found in the selection.'); return; }
+            // ── File ingestion ─────────────────────────────────────────────────
+            function ingestFiles(fileList, zoneEl) {
+                // Filter to .tgs files only; no recursive mode needed (stickers are
+                // always single files).
+                const incoming = [...fileList].filter((f) =>
+                    f.name.toLowerCase().endsWith(".tgs")
+                );
+                if (!incoming.length) {
+                    addMode = false;
+                    alert("No .tgs files found in the selection.");
+                    return;
+                }
 
-  let arr;
-  if (addMode) {
-    addMode = false;
-    const seen = new Set(pendingFiles.map(p => p.file.name + ':' + p.file.size));
-    const novel = incoming.filter(f => !seen.has(f.name + ':' + f.size));
-    if (!novel.length) return;
-    arr = [...pendingFiles, ...novel.map(f => ({ file: f, name: f.name }))];
-  } else {
-    arr = incoming.map(f => ({ file: f, name: f.name }));
-  }
+                let arr;
+                if (addMode) {
+                    addMode = false;
+                    const seen = new Set(
+                        pendingFiles.map((p) => p.file.name + ":" + p.file.size)
+                    );
+                    const novel = incoming.filter(
+                        (f) => !seen.has(f.name + ":" + f.size)
+                    );
+                    if (!novel.length) return;
+                    arr = [
+                        ...pendingFiles,
+                        ...novel.map((f) => ({ file: f, name: f.name }))
+                    ];
+                } else {
+                    arr = incoming.map((f) => ({ file: f, name: f.name }));
+                }
 
-  pendingFiles  = arr;
-  outputResults = [];
-  document.getElementById('results').innerHTML = '';
-  document.getElementById('btn-dl-all').style.display = 'none';
-  setStatus(document.getElementById('status-bar'), 'idle',
-    `${pendingFiles.length} file${pendingFiles.length > 1 ? 's' : ''} ready`);
-  document.getElementById('btn-convert').disabled = false;
+                pendingFiles = arr;
+                outputResults = [];
+                document.getElementById("results").innerHTML = "";
+                document.getElementById("btn-dl-all").style.display = "none";
+                setStatus(
+                    document.getElementById("status-bar"),
+                    "idle",
+                    `${pendingFiles.length} file${pendingFiles.length > 1 ? "s" : ""} ready`
+                );
+                document.getElementById("btn-convert").disabled = false;
 
-  if (activeZone && activeZone !== zoneEl) resetDropZone(activeZone);
-  activeZone = zoneEl;
+                if (activeZone && activeZone !== zoneEl)
+                    resetDropZone(activeZone);
+                activeZone = zoneEl;
 
-  const isFilesZone = zoneEl.id === 'dz-files';
-  showFileList(zoneEl, pendingFiles.map(p => p.file), isFilesZone ? {
-    onAdd: () => { addMode = true; document.getElementById('input-files').click(); },
-  } : {});
-}
+                const isFilesZone = zoneEl.id === "dz-files";
+                showFileList(
+                    zoneEl,
+                    pendingFiles.map((p) => p.file),
+                    isFilesZone
+                        ? {
+                              onAdd: () => {
+                                  addMode = true;
+                                  document
+                                      .getElementById("input-files")
+                                      .click();
+                              }
+                          }
+                        : {}
+                );
+            }
 
-const dzFiles  = document.getElementById('dz-files');
-const dzFolder = document.getElementById('dz-folder');
-setupDropZone(dzFiles,  f => ingestFiles(f, dzFiles));
-setupDropZone(dzFolder, f => ingestFiles(f, dzFolder));
-document.getElementById('input-files').addEventListener('change',  e => ingestFiles(e.target.files, dzFiles));
-document.getElementById('input-folder').addEventListener('change', e => ingestFiles(e.target.files, dzFolder));
+            const dzFiles = document.getElementById("dz-files");
+            const dzFolder = document.getElementById("dz-folder");
+            setupDropZone(dzFiles, (f) => ingestFiles(f, dzFiles));
+            setupDropZone(dzFolder, (f) => ingestFiles(f, dzFolder));
+            document
+                .getElementById("input-files")
+                .addEventListener("change", (e) =>
+                    ingestFiles(e.target.files, dzFiles)
+                );
+            document
+                .getElementById("input-folder")
+                .addEventListener("change", (e) =>
+                    ingestFiles(e.target.files, dzFolder)
+                );
 
-// ── Conversion ─────────────────────────────────────────────────────
-window.convertAll = async function() {
-  // Read all options once before dispatch; the worker receives them as
-  // message fields alongside the file buffer.
-  const statusEl  = document.getElementById('status-bar');
-  const resultsEl = document.getElementById('results');
+            // ── Conversion ─────────────────────────────────────────────────────
+            window.convertAll = async function () {
+                // Read all options once before dispatch; the worker receives them as
+                // message fields alongside the file buffer.
+                const statusEl = document.getElementById("status-bar");
+                const resultsEl = document.getElementById("results");
 
-  const format    = document.querySelector('input[name="fmt"]:checked').value;
-  const fps       = Math.max(1, parseFloat(document.getElementById('opt-fps').value)    || 15);
-  const width     = Math.max(16, parseInt(document.getElementById('opt-width').value)   || 512);
-  const height    = Math.max(16, parseInt(document.getElementById('opt-height').value)  || 512);
-  const maxFrames = parseInt(document.getElementById('opt-max-frames').value) || 0;
-  const [frameStart, frameEnd] = parseRange(document.getElementById('opt-frames').value);
+                const format = document.querySelector(
+                    'input[name="fmt"]:checked'
+                ).value;
+                const fps = Math.max(
+                    1,
+                    parseFloat(document.getElementById("opt-fps").value) || 15
+                );
+                const width = Math.max(
+                    16,
+                    parseInt(document.getElementById("opt-width").value) || 512
+                );
+                const height = Math.max(
+                    16,
+                    parseInt(document.getElementById("opt-height").value) || 512
+                );
+                const maxFrames =
+                    parseInt(document.getElementById("opt-max-frames").value) ||
+                    0;
+                const [frameStart, frameEnd] = parseRange(
+                    document.getElementById("opt-frames").value
+                );
 
-  document.getElementById('btn-convert').disabled = true;
-  resultsEl.innerHTML = '';
-  outputResults = [];
+                document.getElementById("btn-convert").disabled = true;
+                resultsEl.innerHTML = "";
+                outputResults = [];
 
-  const workerCount = Math.min(pendingFiles.length, navigator.hardwareConcurrency || 4);
-  setStatus(statusEl, 'busy', `Starting ${workerCount} worker${workerCount > 1 ? 's' : ''}…`);
-  const pool = new WorkerPool(workerCount);
+                const workerCount = Math.min(
+                    pendingFiles.length,
+                    navigator.hardwareConcurrency || 4
+                );
+                setStatus(
+                    statusEl,
+                    "busy",
+                    `Starting ${workerCount} worker${workerCount > 1 ? "s" : ""}…`
+                );
+                const pool = new WorkerPool(workerCount);
 
-  let done = 0, failed = 0;
+                let done = 0,
+                    failed = 0;
 
-  // Pre-create result cards in stable file order (workers may complete
-  // out of order but card positions won't shift).
-  const cards = pendingFiles.map((item) => {
-    const card = document.createElement('div');
-    card.className = 'result-item pending';
-    card.innerHTML = `
+                // Pre-create result cards in stable file order (workers may complete
+                // out of order but card positions won't shift).
+                const cards = pendingFiles.map((item) => {
+                    const card = document.createElement("div");
+                    card.className = "result-item pending";
+                    card.innerHTML = `
       <div class="result-icon">⏳</div>
       <div class="result-body">
         <div class="result-name">${esc(item.name)}</div>
         <div class="result-sub">Queued…</div>
       </div>`;
-    resultsEl.appendChild(card);
-    return card;
-  });
+                    resultsEl.appendChild(card);
+                    return card;
+                });
 
-  // Dispatch all files concurrently; Promise.all waits for every
-  // worker to finish before closing the pool.
-  const tasks = pendingFiles.map(async (item, i) => {
-    cards[i].querySelector('.result-sub').textContent = 'Rendering in Rust…';
-    try {
-      const bytes = await readFileBytes(item.file);
-      const r = await pool.run({
-        type: 'tgs', data: bytes.buffer,
-        fps, width, height, maxFrames, frameStart, frameEnd, format,
-      }, [bytes.buffer]);
+                // Dispatch all files concurrently; Promise.all waits for every
+                // worker to finish before closing the pool.
+                const tasks = pendingFiles.map(async (item, i) => {
+                    cards[i].querySelector(".result-sub").textContent =
+                        "Rendering in Rust…";
+                    try {
+                        const bytes = await readFileBytes(item.file);
+                        const r = await pool.run(
+                            {
+                                type: "tgs",
+                                data: bytes.buffer,
+                                fps,
+                                width,
+                                height,
+                                maxFrames,
+                                frameStart,
+                                frameEnd,
+                                format
+                            },
+                            [bytes.buffer]
+                        );
 
-      const outBytes = new Uint8Array(r.output);
-      const outName  = replaceExt(item.name, format);
-      const mime     = format === 'gif' ? 'image/gif' : 'image/webp';
-      outputResults[i] = { name: outName, bytes: outBytes, mime };
+                        const outBytes = new Uint8Array(r.output);
+                        const outName = replaceExt(item.name, format);
+                        const mime =
+                            format === "gif" ? "image/gif" : "image/webp";
+                        outputResults[i] = {
+                            name: outName,
+                            bytes: outBytes,
+                            mime
+                        };
 
-      const previewUrl = URL.createObjectURL(new Blob([outBytes], { type: mime }));
-      cards[i].className = 'result-item success';
-      cards[i].innerHTML = `
+                        const previewUrl = URL.createObjectURL(
+                            new Blob([outBytes], { type: mime })
+                        );
+                        cards[i].className = "result-item success";
+                        cards[i].innerHTML = `
         <div class="result-icon">✅</div>
         <div class="result-body">
           <div class="result-name">${esc(outName)}</div>
@@ -258,55 +522,72 @@ window.convertAll = async function() {
         <div class="result-actions">
           <button class="btn btn-ghost" onclick="dlOne(${i})">⬇ Download</button>
         </div>`;
-      done++;
-    } catch(e) {
-      cards[i].className = 'result-item error';
-      cards[i].innerHTML = `
+                        done++;
+                    } catch (e) {
+                        cards[i].className = "result-item error";
+                        cards[i].innerHTML = `
         <div class="result-icon">❌</div>
         <div class="result-body">
           <div class="result-name">${esc(item.name)}</div>
           <div class="result-sub">${esc(String(e))}</div>
         </div>`;
-      failed++;
-    }
-    const total = done + failed;
-    setStatus(statusEl, 'busy', `Converting… ${total}/${pendingFiles.length}`);
-  });
+                        failed++;
+                    }
+                    const total = done + failed;
+                    setStatus(
+                        statusEl,
+                        "busy",
+                        `Converting… ${total}/${pendingFiles.length}`
+                    );
+                });
 
-  await Promise.all(tasks);
-  pool.terminate();
+                await Promise.all(tasks);
+                pool.terminate();
 
-  const msg = failed
-    ? `Done: ${done} converted, ${failed} failed`
-    : `Done: ${done} file${done > 1 ? 's' : ''} converted`;
-  setStatus(statusEl, failed ? 'failed' : 'done', msg);
-  document.getElementById('btn-convert').disabled = false;
-  if (outputResults.filter(Boolean).length > 1) document.getElementById('btn-dl-all').style.display = '';
-};
+                const msg = failed
+                    ? `Done: ${done} converted, ${failed} failed`
+                    : `Done: ${done} file${done > 1 ? "s" : ""} converted`;
+                setStatus(statusEl, failed ? "failed" : "done", msg);
+                document.getElementById("btn-convert").disabled = false;
+                if (outputResults.filter(Boolean).length > 1)
+                    document.getElementById("btn-dl-all").style.display = "";
+            };
 
-window.dlOne = function(idx) {
-  const r = outputResults[idx];
-  if (r) downloadBytes(r.bytes, r.name, r.mime);
-};
-window.downloadAll = function() {
-  const valid = outputResults.filter(Boolean);
-  const zip = buildZip(valid.map(r => ({ name: r.name, bytes: r.bytes })));
-  downloadBytes(zip, 'tgs-converted.zip', 'application/zip');
-};
-window.clearAll = function() {
-  pendingFiles = outputResults = [];
-  document.getElementById('results').innerHTML = '';
-  document.getElementById('btn-convert').disabled = true;
-  document.getElementById('btn-dl-all').style.display = 'none';
-  document.getElementById('input-files').value = '';
-  document.getElementById('input-folder').value = '';
-  if (activeZone) { resetDropZone(activeZone); activeZone = null; }
-  setStatus(document.getElementById('status-bar'), 'idle', 'No files loaded');
-};
+            window.dlOne = function (idx) {
+                const r = outputResults[idx];
+                if (r) downloadBytes(r.bytes, r.name, r.mime);
+            };
+            window.downloadAll = function () {
+                const valid = outputResults.filter(Boolean);
+                const zip = buildZip(
+                    valid.map((r) => ({ name: r.name, bytes: r.bytes }))
+                );
+                downloadBytes(zip, "tgs-converted.zip", "application/zip");
+            };
+            window.clearAll = function () {
+                pendingFiles = outputResults = [];
+                document.getElementById("results").innerHTML = "";
+                document.getElementById("btn-convert").disabled = true;
+                document.getElementById("btn-dl-all").style.display = "none";
+                document.getElementById("input-files").value = "";
+                document.getElementById("input-folder").value = "";
+                if (activeZone) {
+                    resetDropZone(activeZone);
+                    activeZone = null;
+                }
+                setStatus(
+                    document.getElementById("status-bar"),
+                    "idle",
+                    "No files loaded"
+                );
+            };
 
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-</script>
-</body>
+            function esc(s) {
+                return String(s)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            }
+        </script>
+    </body>
 </html>

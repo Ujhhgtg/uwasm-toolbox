@@ -4,6 +4,14 @@
  * Each worker owns its own WASM instance. The main thread dispatches one file
  * per message; the worker posts back the result (or an error string).
  *
+ * Cache-busting: WorkerPool appends `?v=<token>` to this script's URL when a
+ * cache token is stored in localStorage (written by clearWasmCache()).  We
+ * read the same token from self.location.search and pass it through to every
+ * dynamic import() call and to the wasm-pack init() invocation, so all three
+ * resources (worker.js, uwasm_toolbox.js, uwasm_toolbox_bg.wasm) are fetched
+ * with the same versioned URL and therefore bypass whatever the browser cached
+ * under the unversioned URLs.
+ *
  * Message protocol
  * ----------------
  * In  (main → worker):
@@ -20,53 +28,71 @@
  * ArrayBuffers are transferred (zero-copy) in both directions.
  */
 
-import init, { ncm_convert, tgs_convert } from './pkg/uwasm_toolbox.js';
+// Read the optional cache-bust version token injected by WorkerPool via ?v=
+const _v = new URLSearchParams(self.location.search).get("v") || "";
+const _qs = _v ? "?v=" + _v : "";
 
+let ncm_convert, tgs_convert;
 let ready = false;
 const queue = [];
 
-// Initialise WASM once, then flush any messages that arrived early.
+// Initialise WASM once using versioned URLs, then flush any queued messages.
 (async () => {
-  await init();
-  ready = true;
-  queue.splice(0).forEach(handle);
+    const { default: init, ncm_convert: nc, tgs_convert: tc } =
+        await import("./pkg/uwasm_toolbox.js" + _qs);
+    // Pass the versioned .wasm URL so the binary is also re-fetched on bust.
+    await init(new URL("./pkg/uwasm_toolbox_bg.wasm" + _qs, import.meta.url));
+    ncm_convert = nc;
+    tgs_convert = tc;
+    ready = true;
+    queue.splice(0).forEach(handle);
 })();
 
 self.onmessage = ({ data: msg }) => {
-  if (!ready) { queue.push(msg); return; }
-  handle(msg);
+    if (!ready) {
+        queue.push(msg);
+        return;
+    }
+    handle(msg);
 };
 
 async function handle(msg) {
-  const { id, type } = msg;
-  try {
-    if (type === 'ncm') {
-      const r = await ncm_convert(new Uint8Array(msg.data));
-      // .audio / .cover are copies of the WASM Vec<u8> — safe to transfer
-      const audio = r.audio;
-      const cover = r.cover;
-      self.postMessage(
-        { id, audio: audio.buffer, format: r.format,
-          metadata_json: r.metadata_json,
-          cover: cover.buffer, cover_mime: r.cover_mime },
-        [audio.buffer, cover.buffer],
-      );
-
-    } else if (type === 'tgs') {
-      const out = tgs_convert(
-        new Uint8Array(msg.data),
-        msg.fps, msg.width, msg.height,
-        msg.maxFrames, msg.frameStart, msg.frameEnd, msg.format,
-      );
-      self.postMessage(
-        { id, output: out.buffer, format: msg.format },
-        [out.buffer],
-      );
-
-    } else {
-      self.postMessage({ id, error: `unknown message type: ${type}` });
+    const { id, type } = msg;
+    try {
+        if (type === "ncm") {
+            const r = await ncm_convert(new Uint8Array(msg.data));
+            // .audio / .cover are copies of the WASM Vec<u8> — safe to transfer
+            const audio = r.audio;
+            const cover = r.cover;
+            self.postMessage(
+                {
+                    id,
+                    audio: audio.buffer,
+                    format: r.format,
+                    metadata_json: r.metadata_json,
+                    cover: cover.buffer,
+                    cover_mime: r.cover_mime
+                },
+                [audio.buffer, cover.buffer]
+            );
+        } else if (type === "tgs") {
+            const out = tgs_convert(
+                new Uint8Array(msg.data),
+                msg.fps,
+                msg.width,
+                msg.height,
+                msg.maxFrames,
+                msg.frameStart,
+                msg.frameEnd,
+                msg.format
+            );
+            self.postMessage({ id, output: out.buffer, format: msg.format }, [
+                out.buffer
+            ]);
+        } else {
+            self.postMessage({ id, error: `unknown message type: ${type}` });
+        }
+    } catch (err) {
+        self.postMessage({ id, error: String(err) });
     }
-  } catch (err) {
-    self.postMessage({ id, error: String(err) });
-  }
 }
