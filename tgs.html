@@ -119,7 +119,7 @@
 
 <script type="module">
 import { readFileBytes, downloadBytes, replaceExt, fmtBytes,
-         setStatus, setupDropZone, showFileList, resetDropZone, WorkerPool } from './common.js';
+         setStatus, setupDropZone, showFileList, resetDropZone, WorkerPool, buildZip } from './common.js';
 
 // ── State ──────────────────────────────────────────────────────────
 let pendingFiles  = [];
@@ -279,7 +279,9 @@ window.dlOne = function(idx) {
   if (r) downloadBytes(r.bytes, r.name, r.mime);
 };
 window.downloadAll = function() {
-  outputResults.forEach(r => downloadBytes(r.bytes, r.name, r.mime));
+  const valid = outputResults.filter(Boolean);
+  const zip = buildZip(valid.map(r => ({ name: r.name, bytes: r.bytes })));
+  downloadBytes(zip, 'tgs-converted.zip', 'application/zip');
 };
 window.clearAll = function() {
   pendingFiles = outputResults = [];
