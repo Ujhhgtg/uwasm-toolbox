@@ -24,10 +24,12 @@ There are no tests. CI (`deploy-gh-pages.yml`) runs `./build.sh && rm -f www/pkg
 The crate is a pure `cdylib`. All public surface is in `src/lib.rs`; the two tool modules are `src/ncm.rs` and `src/tgs.rs`.
 
 **`ncm_convert(data: &[u8]) -> Promise<NcmResult>`** (async)
+
 1. `ncm::decode` — validates the `NETCMADF` magic, AES-128-ECB decrypts the key box with `CORE_KEY`, decrypts metadata JSON with `MODIFY_KEY`, stream-decrypts the audio using the RC4-like key-box cipher, returns raw audio + `SongMeta` + embedded cover + `album_pic_url`.
 2. `ncm::apply_metadata_async` — fetches remote cover art via `reqwest::get` (browser `fetch` on WASM) if no cover was embedded, then writes title/artist/album/cover into the audio using `lofty`'s `Probe::new(BufReader::new(Cursor::new(...)))` + `save_to` API (fully in-memory, no filesystem).
 
 **`tgs_convert(data, fps, w, h, max_frames, frame_start, frame_end, format) -> Vec<u8>`** (sync)
+
 1. `tgs::decompress` — detects gzip by magic bytes (`0x1F 0x8B`) and decompresses, or passes through plain UTF-8 JSON.
 2. Computes a frame schedule (step = `round(source_fps / target_fps)`, uniform subsampling for `max_frames`).
 3. `rasterlottie::Renderer::default().prepare(&anim)` — compiles the animation once; `prepared.render_frame(f, config)` renders each frame to `RasterFrame { pixels: Vec<u8> }` (RGBA8, `tiny-skia` backend, pure Rust, no C deps).
@@ -43,6 +45,7 @@ The crate is a pure `cdylib`. All public surface is in `src/lib.rs`; the two too
 **Worker architecture**: every conversion is dispatched to a `WorkerPool` (in `common.js`). Each worker (`www/worker.js`) owns its own WASM instance, initialised with `import init, { ... } from './pkg/uwasm_toolbox.js'`. Files are dispatched concurrently with `Promise.all`; the pool size is `min(fileCount, navigator.hardwareConcurrency || 4)`. `ArrayBuffer`s are transferred (not copied) between main thread and workers.
 
 **Message protocol** (`worker.js`):
+
 - `{ id, type: 'ncm', data: ArrayBuffer }` → `{ id, audio, format, metadata_json, cover, cover_mime }`
 - `{ id, type: 'tgs', data, fps, width, height, maxFrames, frameStart, frameEnd, format }` → `{ id, output: ArrayBuffer, format }`
 

@@ -1,3 +1,18 @@
+//! NetEase Cloud Music (.ncm) decryption.
+//!
+//! Implements the reverse-engineered .ncm decryption algorithm:
+//!
+//! 1. Validate the `NETCMADF` magic header.
+//! 2. AES-128-ECB decrypt the key material with `CORE_KEY`.
+//! 3. Build a 256-byte RC4-like key box from the decrypted key.
+//! 4. AES-128-ECB decrypt the metadata JSON with `MODIFY_KEY`.
+//! 5. Extend the RC4-like stream cipher over the audio data.
+//! 6. Detect format (FLAC/MP3) from the decrypted audio header.
+//! 7. (In `apply_metadata_async`) write title/artist/album/cover
+//!    tags using Lofty, fetching remote cover art if needed.
+//!
+//! All operations are in-memory — no filesystem access.
+
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use crate::{clog, cwarn};
@@ -51,6 +66,8 @@ pub struct NcmDecoded {
 // Private helpers
 // ---------------------------------------------------------------------------
 
+/// Read exactly `size` bytes from a `Read` source, or fail with
+/// `UnexpectedEof` if fewer bytes are available.
 fn read_exact<R: Read>(reader: &mut R, size: usize) -> std::io::Result<Vec<u8>> {
     let mut buf = vec![0u8; size];
     reader.read_exact(&mut buf)?;
@@ -73,6 +90,10 @@ fn aes_ecb_decrypt(key: &[u8; 16], data: &[u8]) -> Vec<u8> {
 }
 
 /// Build the 256-byte key box from decrypted key material.
+///
+/// This implements the RC4-like PRNG used by NetEase to stream-cipher
+/// the audio data. The algorithm swaps elements in a 256-byte array
+/// keyed by the decrypted key material (offset 17+).
 fn build_key_box(key: &[u8]) -> [u8; 256] {
     let mut box_: [u8; 256] = std::array::from_fn(|i| i as u8);
     let mut last: u8 = 0;
@@ -145,14 +166,23 @@ pub fn decode(data: &[u8]) -> Result<NcmDecoded, String> {
         let modify_decrypt = aes_ecb_decrypt(&MODIFY_KEY, &modify_out);
 
         // Strip "music:" prefix (6 bytes)
-        let meta_json = std::str::from_utf8(&modify_decrypt[6..])
-            .map_err(|_| "invalid metadata JSON UTF-8")?;
+        let meta_json =
+            std::str::from_utf8(&modify_decrypt[6..]).map_err(|_| "invalid metadata JSON UTF-8")?;
 
         let v: Value = serde_json::from_str(meta_json).map_err(|e| e.to_string())?;
 
-        let name = v.get("musicName").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let album = v.get("album").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let artist = v.get("artist")
+        let name = v
+            .get("musicName")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let album = v
+            .get("album")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let artist = v
+            .get("artist")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -168,10 +198,25 @@ pub fn decode(data: &[u8]) -> Result<NcmDecoded, String> {
 
         let bitrate = v.get("bitrate").and_then(|v| v.as_i64()).unwrap_or(0);
         let duration = v.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
-        let format = v.get("format").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let pic_url = v.get("albumPic").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let format = v
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let pic_url = v
+            .get("albumPic")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
-        let meta = SongMeta { name, album, artist, bitrate, duration, format };
+        let meta = SongMeta {
+            name,
+            album,
+            artist,
+            bitrate,
+            duration,
+            format,
+        };
         (Some(meta), pic_url)
     } else {
         (None, String::new())
@@ -196,7 +241,8 @@ pub fn decode(data: &[u8]) -> Result<NcmDecoded, String> {
     // Skip remaining cover frame padding
     let remaining = cf_total - cd_len as i64;
     if remaining > 0 {
-        cur.seek(SeekFrom::Current(remaining)).map_err(|e| e.to_string())?;
+        cur.seek(SeekFrom::Current(remaining))
+            .map_err(|e| e.to_string())?;
     }
 
     // --- Stream-decrypt audio ---
@@ -213,9 +259,8 @@ pub fn decode(data: &[u8]) -> Result<NcmDecoded, String> {
 
         for i in 0..n {
             let j = (i + 1) & 0xff;
-            let idx = (key_box[j] as usize
-                + key_box[(key_box[j] as usize + j) & 0xff] as usize)
-                & 0xff;
+            let idx =
+                (key_box[j] as usize + key_box[(key_box[j] as usize + j) & 0xff] as usize) & 0xff;
             buffer[i] ^= key_box[idx];
         }
 
@@ -231,12 +276,22 @@ pub fn decode(data: &[u8]) -> Result<NcmDecoded, String> {
 
     // Metadata embedding happens async (may need to fetch remote cover art).
     // Return raw audio here; lib.rs calls apply_metadata_async after decode.
-    Ok(NcmDecoded { audio, format: format_str, metadata, cover, album_pic_url })
+    Ok(NcmDecoded {
+        audio,
+        format: format_str,
+        metadata,
+        cover,
+        album_pic_url,
+    })
 }
 
 /// MIME type of the embedded cover image, derived from its header bytes.
 pub fn cover_mime(cover: &[u8]) -> &'static str {
-    if cover.starts_with(&PNG_HEADER) { "image/png" } else { "image/jpeg" }
+    if cover.starts_with(&PNG_HEADER) {
+        "image/png"
+    } else {
+        "image/jpeg"
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -267,8 +322,14 @@ pub async fn apply_metadata_async(
     } else if !pic_url.is_empty() {
         clog!("ncm: fetching remote cover from {}", pic_url);
         match fetch_bytes(pic_url).await {
-            Ok(bytes) => { clog!("ncm: fetched {} bytes of cover art", bytes.len()); bytes }
-            Err(e)    => { cwarn!("ncm: cover fetch failed: {e}"); Vec::new() }
+            Ok(bytes) => {
+                clog!("ncm: fetched {} bytes of cover art", bytes.len());
+                bytes
+            }
+            Err(e) => {
+                cwarn!("ncm: cover fetch failed: {e}");
+                Vec::new()
+            }
         }
     } else {
         clog!("ncm: no cover art available");
@@ -276,16 +337,24 @@ pub async fn apply_metadata_async(
     };
 
     match try_apply_metadata(&audio, meta, &cover) {
-        Ok(tagged) => { clog!("ncm: tags written successfully"); tagged }
-        Err(e)     => { cwarn!("ncm: lofty tag write failed: {e}"); audio }
+        Ok(tagged) => {
+            clog!("ncm: tags written successfully");
+            tagged
+        }
+        Err(e) => {
+            cwarn!("ncm: lofty tag write failed: {e}");
+            audio
+        }
     }
 }
 
 /// Fetch raw bytes from a URL (async, uses browser fetch on WASM).
+///
+/// On WASM targets `reqwest::get` maps to `window.fetch`; on native
+/// targets it uses the system TLS stack. Used to retrieve remote
+/// album art from NetEase's CDN.
 async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
-    let resp = reqwest::get(url)
-        .await
-        .map_err(|e| e.to_string())?;
+    let resp = reqwest::get(url).await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -295,6 +364,11 @@ async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Write metadata tags (title, artist, album, cover) into audio bytes.
+///
+/// Uses `lofty` to probe the audio format, read the existing tag,
+/// set title/artist/album/cover art, and write back to an in-memory
+/// buffer. No filesystem access — everything operates on `Cursor<Vec<u8>>`.
 fn try_apply_metadata(audio: &[u8], meta: &SongMeta, cover: &[u8]) -> Result<Vec<u8>, String> {
     use lofty::config::WriteOptions;
     use lofty::file::AudioFile;
@@ -311,12 +385,22 @@ fn try_apply_metadata(audio: &[u8], meta: &SongMeta, cover: &[u8]) -> Result<Vec
 
     let tag = tagged.primary_tag_mut().ok_or("no primary tag")?;
 
-    if !meta.name.is_empty()   { tag.set_title(meta.name.clone()); }
-    if !meta.artist.is_empty() { tag.set_artist(meta.artist.clone()); }
-    if !meta.album.is_empty()  { tag.set_album(meta.album.clone()); }
+    if !meta.name.is_empty() {
+        tag.set_title(meta.name.clone());
+    }
+    if !meta.artist.is_empty() {
+        tag.set_artist(meta.artist.clone());
+    }
+    if !meta.album.is_empty() {
+        tag.set_album(meta.album.clone());
+    }
 
     if !cover.is_empty() {
-        let mime = if cover.starts_with(&PNG_HEADER) { MimeType::Png } else { MimeType::Jpeg };
+        let mime = if cover.starts_with(&PNG_HEADER) {
+            MimeType::Png
+        } else {
+            MimeType::Jpeg
+        };
         let picture = Picture::unchecked(cover.to_vec())
             .pic_type(PictureType::CoverFront)
             .mime_type(mime)

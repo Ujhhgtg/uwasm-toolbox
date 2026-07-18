@@ -1,3 +1,21 @@
+//! Telegram animated sticker (.tgs) conversion.
+//!
+//! TGS files are gzip-compressed Lottie JSON. The conversion pipeline:
+//!
+//! 1. Decompress gzip (or pass through plain JSON) → Lottie JSON string.
+//! 2. Parse with `rasterlottie` (pure-Rust Lottie rasterizer, tiny-skia
+//!    backend — no C dependencies, no system libs).
+//! 3. Compute frame schedule: clamp target FPS ≤ source FPS, then
+//!    uniformly decimate with `step = round(source_fps / target_fps)`.
+//!    Optionally cap total frames via `max_frames` with another uniform
+//!    subsampling pass.
+//! 4. Render each frame to RGBA via rasterlottie's `prepared.render_frame`.
+//! 5. Encode as animated GIF (via `gif` crate) or lossless animated WebP
+//!    (VP8L via `image-webp`, with a custom RIFF/VP8X/ANIM/ANMF muxer
+//!    since the `image` crate's encoder doesn't support animation).
+//!
+//! All operations are synchronous and in-memory.
+
 use flate2::read::GzDecoder;
 use std::io::Read;
 
@@ -46,9 +64,19 @@ pub struct ConvertOptions {
 // ---------------------------------------------------------------------------
 
 /// Convert a TGS/Lottie JSON string to an animated GIF or WebP.
+///
+/// Frame pipeline:
+///   1. Parse Lottie JSON → `Animation` (rasterlottie).
+///   2. Compute frame range from `opts.frame_start`/`frame_end`,
+///      falling back to `anim.in_point`/`anim.out_point`.
+///   3. Uniformly decimate source frames to `target_fps` using
+///      `step = round(source_fps / target_fps)`.
+///   4. If `max_frames` is set and the decimated count exceeds it,
+///      subsample again with a uniform stride.
+///   5. Render each frame to RGBA via `prepared.render_frame`.
+///   6. Encode as GIF or WebP (animated).
 pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8>, String> {
-    let anim = Animation::from_json_str(json)
-        .map_err(|e| format!("Lottie parse error: {e}"))?;
+    let anim = Animation::from_json_str(json).map_err(|e| format!("Lottie parse error: {e}"))?;
 
     let source_fps = anim.frame_rate.max(1.0);
     let anim_start = anim.in_point.floor();
@@ -56,7 +84,11 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
 
     crate::clog!(
         "tgs: animation {}x{}  {:.0}fps  frames {:.0}–{:.0}",
-        anim.width, anim.height, source_fps, anim_start, anim_end
+        anim.width,
+        anim.height,
+        source_fps,
+        anim_start,
+        anim_end
     );
 
     let range_start = if opts.frame_start > 0 {
@@ -111,7 +143,11 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
 
     clog!(
         "tgs: rendering {} frames at {:.1}fps  scale={:.3}  output={}x{}",
-        frame_nums.len(), actual_fps, scale, opts.width, opts.height
+        frame_nums.len(),
+        actual_fps,
+        scale,
+        opts.width,
+        opts.height
     );
 
     let config = RenderConfig::new(Rgba8::TRANSPARENT, scale);
@@ -135,7 +171,12 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
     }
 
     let (out_w, out_h) = (frames[0].0, frames[0].1);
-    crate::clog!("tgs: rendered {} frames at {}x{}", frames.len(), out_w, out_h);
+    crate::clog!(
+        "tgs: rendered {} frames at {}x{}",
+        frames.len(),
+        out_w,
+        out_h
+    );
 
     match format {
         "gif" => {
@@ -154,6 +195,10 @@ pub fn convert(json: &str, opts: &ConvertOptions, format: &str) -> Result<Vec<u8
 // GIF encoder
 // ---------------------------------------------------------------------------
 
+/// Encode a sequence of RGBA frames as an animated GIF.
+///
+/// Dispose to background before each frame so transparent pixels
+/// in frame N don't reveal frame N-1 content underneath.
 fn encode_gif(
     frames: &[(u32, u32, Vec<u8>)],
     width: u32,
@@ -164,8 +209,8 @@ fn encode_gif(
     let h = height as u16;
     let mut output = Vec::new();
     {
-        let mut encoder = gif::Encoder::new(&mut output, w, h, &[])
-            .map_err(|e| format!("gif init: {e}"))?;
+        let mut encoder =
+            gif::Encoder::new(&mut output, w, h, &[]).map_err(|e| format!("gif init: {e}"))?;
         encoder
             .set_repeat(gif::Repeat::Infinite)
             .map_err(|e| format!("gif repeat: {e}"))?;
@@ -189,6 +234,10 @@ fn encode_gif(
 // Animated WebP encoder (pure Rust, VP8L lossless)
 // ---------------------------------------------------------------------------
 
+/// Encode a sequence of RGBA frames as an animated lossless WebP.
+///
+/// Each frame is independently encoded as VP8L via `image::codecs::webp`,
+/// then `mux_animated_webp` assembles the RIFF/VP8X/ANIM/ANMF container.
 fn encode_webp_anim(
     frames: &[(u32, u32, Vec<u8>)],
     width: u32,
@@ -204,7 +253,11 @@ fn encode_webp_anim(
     mux_animated_webp(&frame_webps, width, height, delay_ms)
 }
 
-/// Encode one RGBA frame as a static lossless WebP file.
+/// Encode one RGBA frame as a static lossless WebP file (VP8L).
+///
+/// Uses `image::codecs::webp::WebPEncoder::new_lossless`, which outputs
+/// a standalone RIFF-WEBP file. The enclosing `mux_animated_webp` extracts
+/// the VP8L chunk from this output and places it into an ANMF container.
 fn encode_webp_frame(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
     use image::codecs::webp::WebPEncoder;
     use image::{ColorType, ImageEncoder};
@@ -250,19 +303,15 @@ fn mux_animated_webp(
     /// Extract ALPH / VP8 / VP8L chunks from a single-frame WebP file.
     /// Skips VP8X — ANMF frame data must not contain a VP8X wrapper.
     fn extract_frame_chunks(webp: &[u8]) -> Result<Vec<u8>, String> {
-        if webp.len() < 12
-            || &webp[0..4] != b"RIFF"
-            || &webp[8..12] != b"WEBP"
-        {
+        if webp.len() < 12 || &webp[0..4] != b"RIFF" || &webp[8..12] != b"WEBP" {
             return Err("encode_webp_frame returned invalid WebP".to_string());
         }
         let mut out = Vec::new();
         let mut offset = 12usize;
         while offset + 8 <= webp.len() {
             let tag = &webp[offset..offset + 4];
-            let size = u32::from_le_bytes(
-                webp[offset + 4..offset + 8].try_into().unwrap(),
-            ) as usize;
+            let size =
+                u32::from_le_bytes(webp[offset + 4..offset + 8].try_into().unwrap()) as usize;
             let padded = size + (size & 1);
             let end = (offset + 8 + padded).min(webp.len());
             if tag == b"VP8 " || tag == b"VP8L" || tag == b"ALPH" {

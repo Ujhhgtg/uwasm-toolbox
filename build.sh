@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Build script for uwasm-toolbox.
+# Compiles Rust to WASM via wasm-pack and places output in www/pkg/.
 set -e
 echo "Building uwasm-toolbox WASM..."
 wasm-pack build --target web --out-dir www/pkg --release

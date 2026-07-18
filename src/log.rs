@@ -1,12 +1,17 @@
-/// Browser console logging macros for WASM.
-///
-/// Usage:
-///   log!("step {}: doing thing", n);
-///   warn!("unexpected value: {}", v);
-///   error!("failed: {}", e);
+//! WASM-compatible console logging.
+//!
+//! Provides `clog!`, `cwarn!`, and `cerror!` macros that format
+//! messages with a `[uwasm]` prefix and dispatch to `web_sys::console`.
+//! On WASM targets these call `console.log`/`.warn`/`.error` in the
+//! browser; they are no-ops in terms of panicking but still allocate.
+//!
+//! Usage:
+//!   clog!("step {}: doing thing", n);
+//!   cwarn!("unexpected value: {}", v);
+//!   cerror!("failed: {}", e);
 
-use web_sys::console;
 use wasm_bindgen::JsValue;
+use web_sys::console;
 
 pub fn log(msg: &str) {
     console::log_1(&JsValue::from_str(msg));
