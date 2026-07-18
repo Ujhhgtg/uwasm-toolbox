@@ -1,48 +1,65 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>µWasm Toolbox</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>µWasm Toolbox</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        />
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <nav class="topbar">
+            <span class="topbar-logo">µ<span>Wasm</span> Toolbox</span>
+            <span class="topbar-sep"></span>
+            <button class="topbar-btn" id="clear-cache-btn" title="Delete cached WASM binaries and reload">↺ Clear cache</button>
+        </nav>
 
-<nav class="topbar">
-  <span class="topbar-logo">µ<span>Wasm</span> Toolbox</span>
-</nav>
+        <main class="page">
+            <section class="hero">
+                <h1>Browser-native <span>toolbox</span></h1>
+                <p>
+                    File conversion tools powered by Rust + WebAssembly.<br />
+                    Everything runs locally — no uploads, no servers.
+                </p>
+            </section>
 
-<main class="page">
-  <section class="hero">
-    <h1>Browser-native <span>toolbox</span></h1>
-    <p>File conversion tools powered by Rust + WebAssembly.<br>
-       Everything runs locally — no uploads, no servers.</p>
-  </section>
+            <div class="tool-grid">
+                <a href="ncm.html" class="tool-card">
+                    <div class="tool-card-icon">🎵</div>
+                    <div class="tool-card-name">NCM Converter</div>
+                    <div class="tool-card-desc">
+                        Decrypt Netease Cloud Music <code>.ncm</code> files to
+                        FLAC or MP3. Preserves embedded cover art and metadata.
+                    </div>
+                    <span class="tool-card-tag">Audio</span>
+                </a>
 
-  <div class="tool-grid">
-    <a href="ncm.html" class="tool-card">
-      <div class="tool-card-icon">🎵</div>
-      <div class="tool-card-name">NCM Converter</div>
-      <div class="tool-card-desc">
-        Decrypt Netease Cloud Music <code>.ncm</code> files to
-        FLAC or MP3. Preserves embedded cover art and metadata.
-      </div>
-      <span class="tool-card-tag">Audio</span>
-    </a>
-
-    <a href="tgs.html" class="tool-card">
-      <div class="tool-card-icon">🎞️</div>
-      <div class="tool-card-name">TGS Converter</div>
-      <div class="tool-card-desc">
-        Convert Telegram animated stickers <code>.tgs</code>
-        to animated GIF or lossless WebP. Control FPS, size, and frame range.
-      </div>
-      <span class="tool-card-tag">Animation</span>
-    </a>
-  </div>
-</main>
-
-</body>
+                <a href="tgs.html" class="tool-card">
+                    <div class="tool-card-icon">🎞️</div>
+                    <div class="tool-card-name">TGS Converter</div>
+                    <div class="tool-card-desc">
+                        Convert Telegram animated stickers <code>.tgs</code>
+                        to animated GIF or lossless WebP. Control FPS, size, and
+                        frame range.
+                    </div>
+                    <span class="tool-card-tag">Animation</span>
+                </a>
+            </div>
+        </main>
+        <script type="module">
+            import { clearWasmCache } from "./common.js";
+            const btn = document.getElementById("clear-cache-btn");
+            btn.addEventListener("click", async () => {
+                btn.disabled = true;
+                btn.textContent = "↺ Clearing…";
+                await clearWasmCache(); // navigates away; line below only hit on error
+                btn.disabled = false;
+                btn.textContent = "↺ Clear cache";
+            });
+        </script>
+    </body>
 </html>
