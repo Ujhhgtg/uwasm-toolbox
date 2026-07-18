@@ -541,4 +541,6 @@ hr.divider {
   border-top: 1px solid var(--border);
   margin: 1.75rem 0;
 }
+/* Utility: safe-hide without removing from layout flow.        */
+/* !important overrides any display value set by other selectors. */
 .hidden { display: none !important; }

@@ -127,6 +127,8 @@ window.switchTab = function(tab) {
 
 // ── File ingestion ────────────────────────────────────────────────
 function ingestFiles(fileList, zoneEl) {
+  // Filter to .ncm files only; in recursive mode accept nested files,
+  // in non-recursive mode only files at depth 1 (no subdirs).
   const recursive = document.getElementById('opt-recursive').checked;
   const incoming = [...fileList].filter(f => {
     if (!f.name.toLowerCase().endsWith('.ncm')) return false;
@@ -138,7 +140,8 @@ function ingestFiles(fileList, zoneEl) {
 
   let arr;
   if (addMode) {
-    // Merge: append files not already present (dedup by name + size)
+    // Merge mode: append files not already present, deduplicating by
+    // name + size so the same file can't appear twice.
     addMode = false;
     const seen = new Set(pendingFiles.map(p => p.file.name + ':' + p.file.size));
     const novel = incoming.filter(f => !seen.has(f.name + ':' + f.size));
@@ -163,7 +166,8 @@ function ingestFiles(fileList, zoneEl) {
   if (activeZone && activeZone !== zoneEl) resetDropZone(activeZone);
   activeZone = zoneEl;
 
-  // Files zone gets an Add button; folder zone gets none
+  // Files tab shows an Add button for incremental selection; folder
+  // tab replaces the entire selection (no merge).
   const isFilesZone = zoneEl.id === 'dz-files';
   showFileList(zoneEl, pendingFiles.map(p => p.file), isFilesZone ? {
     onAdd: () => { addMode = true; document.getElementById('input-files').click(); },
@@ -179,6 +183,9 @@ document.getElementById('input-folder').addEventListener('change', e => ingestFi
 
 // ── Conversion ───────────────────────────────────────────────────
 window.convertAll = async function() {
+  // Each file gets its own worker task. The pool dispatches
+  // concurrently up to `hardwareConcurrency` workers. Results arrive
+  // out of order but are placed into stable pre-created card slots.
   const statusEl  = document.getElementById('status-bar');
   const resultsEl = document.getElementById('results');
   const showMeta  = document.getElementById('opt-metadata').checked;
@@ -193,7 +200,8 @@ window.convertAll = async function() {
 
   let done = 0, failed = 0;
 
-  // Create all result cards upfront so order is stable
+  // Pre-create result cards in file-order so that even though
+  // workers complete out of order, the visible list stays stable.
   const cards = pendingFiles.map((item, i) => {
     const card = document.createElement('div');
     card.className = 'result-item pending';

@@ -136,6 +136,9 @@ window.switchTab = function(tab) {
 };
 
 // ── Frame range parsing ────────────────────────────────────────────
+// Parse a "start-end" or "start" frame range string.
+// Returns [inclusive_start, exclusive_end]; a bare number N → [N, N+1].
+// Empty or invalid input → [0, 0] (use animation defaults).
 function parseRange(s) {
   if (!s || !s.trim()) return [0, 0];
   const parts = s.trim().split('-');
@@ -146,6 +149,8 @@ function parseRange(s) {
 
 // ── File ingestion ─────────────────────────────────────────────────
 function ingestFiles(fileList, zoneEl) {
+  // Filter to .tgs files only; no recursive mode needed (stickers are
+  // always single files).
   const incoming = [...fileList].filter(f => f.name.toLowerCase().endsWith('.tgs'));
   if (!incoming.length) { addMode = false; alert('No .tgs files found in the selection.'); return; }
 
@@ -186,6 +191,8 @@ document.getElementById('input-folder').addEventListener('change', e => ingestFi
 
 // ── Conversion ─────────────────────────────────────────────────────
 window.convertAll = async function() {
+  // Read all options once before dispatch; the worker receives them as
+  // message fields alongside the file buffer.
   const statusEl  = document.getElementById('status-bar');
   const resultsEl = document.getElementById('results');
 
@@ -206,7 +213,8 @@ window.convertAll = async function() {
 
   let done = 0, failed = 0;
 
-  // Create all result cards upfront so order is stable
+  // Pre-create result cards in stable file order (workers may complete
+  // out of order but card positions won't shift).
   const cards = pendingFiles.map((item) => {
     const card = document.createElement('div');
     card.className = 'result-item pending';
@@ -220,6 +228,8 @@ window.convertAll = async function() {
     return card;
   });
 
+  // Dispatch all files concurrently; Promise.all waits for every
+  // worker to finish before closing the pool.
   const tasks = pendingFiles.map(async (item, i) => {
     cards[i].querySelector('.result-sub').textContent = 'Rendering in Rust…';
     try {
