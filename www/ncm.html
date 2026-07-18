@@ -109,7 +109,7 @@
 </main>
 
 <script type="module">
-import { readFileBytes, downloadBytes, replaceExt, fmtBytes, fmtDuration, setStatus, setupDropZone, showFileList, resetDropZone, WorkerPool } from './common.js';
+import { readFileBytes, downloadBytes, replaceExt, fmtBytes, fmtDuration, setStatus, setupDropZone, showFileList, resetDropZone, WorkerPool, buildZip } from './common.js';
 
 // ── State ────────────────────────────────────────────────────────
 let pendingFiles = []; // {file, name, relativePath}
@@ -291,7 +291,9 @@ window.dlOne = function(idx) {
 };
 
 window.downloadAll = function() {
-  results.forEach(r => downloadBytes(r.bytes, r.name, r.mime));
+  const valid = results.filter(Boolean);
+  const zip = buildZip(valid.map(r => ({ name: r.name, bytes: r.bytes })));
+  downloadBytes(zip, 'ncm-converted.zip', 'application/zip');
 };
 
 window.clearAll = function() {

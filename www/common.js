@@ -146,6 +146,106 @@ export function resetDropZone(zone) {
   if (input)  input.style.display = '';
 }
 
+// ── ZIP builder ───────────────────────────────────────────────────
+
+/**
+ * Build a non-compressed (stored) ZIP archive.
+ * @param {{ name: string, bytes: Uint8Array }[]} files
+ * @returns {Uint8Array}
+ */
+export function buildZip(files) {
+  const T = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    T[i] = c;
+  }
+  function crc32(data) {
+    let c = 0xFFFFFFFF;
+    for (const b of data) c = T[(c ^ b) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  const enc = new TextEncoder();
+  const entries = [];
+  const local   = [];
+  let   dataOff = 0;
+
+  for (const { name, bytes } of files) {
+    const nb   = enc.encode(name);
+    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const crc  = crc32(data);
+    const sz   = data.length;
+
+    // Local file header (30 + filename)
+    const lh = new DataView(new ArrayBuffer(30 + nb.length));
+    let p = 0;
+    lh.setUint32(p, 0x04034B50, true); p += 4;
+    lh.setUint16(p, 20, true);         p += 2; // version needed
+    lh.setUint16(p, 0,  true);         p += 2; // flags
+    lh.setUint16(p, 0,  true);         p += 2; // compression: stored
+    lh.setUint16(p, 0,  true);         p += 2; // mod time
+    lh.setUint16(p, 0,  true);         p += 2; // mod date
+    lh.setUint32(p, crc, true);        p += 4;
+    lh.setUint32(p, sz,  true);        p += 4; // compressed size
+    lh.setUint32(p, sz,  true);        p += 4; // uncompressed size
+    lh.setUint16(p, nb.length, true);  p += 2;
+    lh.setUint16(p, 0,  true);         p += 2; // extra length
+    new Uint8Array(lh.buffer, 30).set(nb);
+
+    entries.push({ nb, crc, sz, localOff: dataOff });
+    local.push(new Uint8Array(lh.buffer), data);
+    dataOff += 30 + nb.length + sz;
+  }
+
+  // Central directory
+  const cd = [];
+  let cdSz = 0;
+  for (const { nb, crc, sz, localOff } of entries) {
+    const h = new DataView(new ArrayBuffer(46 + nb.length));
+    let p = 0;
+    h.setUint32(p, 0x02014B50, true); p += 4;
+    h.setUint16(p, 20, true);         p += 2; // made by
+    h.setUint16(p, 20, true);         p += 2; // needed
+    h.setUint16(p, 0,  true);         p += 2; // flags
+    h.setUint16(p, 0,  true);         p += 2; // compression
+    h.setUint16(p, 0,  true);         p += 2; // mod time
+    h.setUint16(p, 0,  true);         p += 2; // mod date
+    h.setUint32(p, crc, true);        p += 4;
+    h.setUint32(p, sz,  true);        p += 4;
+    h.setUint32(p, sz,  true);        p += 4;
+    h.setUint16(p, nb.length, true);  p += 2;
+    h.setUint16(p, 0, true);          p += 2; // extra
+    h.setUint16(p, 0, true);          p += 2; // comment
+    h.setUint16(p, 0, true);          p += 2; // disk start
+    h.setUint16(p, 0, true);          p += 2; // internal attrs
+    h.setUint32(p, 0, true);          p += 4; // external attrs
+    h.setUint32(p, localOff, true);   p += 4;
+    new Uint8Array(h.buffer, 46).set(nb);
+    cd.push(new Uint8Array(h.buffer));
+    cdSz += 46 + nb.length;
+  }
+
+  // End of central directory (22 bytes)
+  const eocd = new DataView(new ArrayBuffer(22));
+  let p = 0;
+  eocd.setUint32(p, 0x06054B50,       true); p += 4;
+  eocd.setUint16(p, 0,                true); p += 2;
+  eocd.setUint16(p, 0,                true); p += 2;
+  eocd.setUint16(p, entries.length,   true); p += 2;
+  eocd.setUint16(p, entries.length,   true); p += 2;
+  eocd.setUint32(p, cdSz,             true); p += 4;
+  eocd.setUint32(p, dataOff,          true); p += 4;
+  eocd.setUint16(p, 0,                true);
+
+  const all   = [...local, ...cd, new Uint8Array(eocd.buffer)];
+  const total = all.reduce((n, a) => n + a.length, 0);
+  const zip   = new Uint8Array(total);
+  let off = 0;
+  for (const a of all) { zip.set(a, off); off += a.length; }
+  return zip;
+}
+
 // ── Web Worker pool ───────────────────────────────────────────────
 
 /**
