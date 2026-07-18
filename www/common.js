@@ -146,7 +146,90 @@ export function resetDropZone(zone) {
   if (input)  input.style.display = '';
 }
 
-// ── Status bar helper ──────────────────────────────────────────────
+// ── Web Worker pool ───────────────────────────────────────────────
+
+/**
+ * A fixed-size pool of Web Workers that share a message-based queue.
+ *
+ * Each worker runs worker.js, which hosts its own WASM instance.
+ * Idle workers are assigned tasks immediately; busy workers queue
+ * tasks until a slot opens. Results are delivered as Promises.
+ *
+ * @example
+ * const pool = new WorkerPool(Math.min(files.length, navigator.hardwareConcurrency || 4));
+ * const result = await pool.run({ type: 'tgs', data: buf, ... }, [buf]);
+ * pool.terminate();
+ */
+export class WorkerPool {
+  constructor(size = 1) {
+    this._pending = new Map(); // id → { resolve, reject }
+    this._queue   = [];        // tasks waiting for a free worker
+    this._nextId  = 0;
+    // Resolve the worker URL relative to this module
+    const workerUrl = new URL('./worker.js', import.meta.url);
+    this._workers = Array.from({ length: size }, () => {
+      const w  = new Worker(workerUrl, { type: 'module' });
+      w._idle  = true;
+      w.onmessage = ({ data }) => this._recv(w, data);
+      w.onerror   = (e)       => this._recvError(w, e);
+      return w;
+    });
+  }
+
+  _recv(worker, data) {
+    worker._idle = true;
+    this._drain();
+    const { id, error, ...payload } = data;
+    const handlers = this._pending.get(id);
+    if (!handlers) return;
+    this._pending.delete(id);
+    if (error) handlers.reject(new Error(error));
+    else       handlers.resolve(payload);
+  }
+
+  _recvError(worker, e) {
+    // Worker crashed — reject the first pending task assigned to it
+    // (we can't know the id, so we reject the oldest pending)
+    worker._idle = true;
+    this._drain();
+    const [id, handlers] = this._pending.entries().next().value ?? [];
+    if (handlers) {
+      this._pending.delete(id);
+      handlers.reject(new Error(`Worker error: ${e.message}`));
+    }
+  }
+
+  _drain() {
+    if (!this._queue.length) return;
+    const w = this._workers.find(w => w._idle);
+    if (!w) return;
+    const { id, msg, transfer, resolve, reject } = this._queue.shift();
+    this._dispatch(w, id, msg, transfer, resolve, reject);
+  }
+
+  _dispatch(w, id, msg, transfer, resolve, reject) {
+    w._idle = false;
+    this._pending.set(id, { resolve, reject });
+    w.postMessage({ ...msg, id }, transfer);
+  }
+
+  /**
+   * Submit a task. Returns a Promise that resolves with the worker's reply.
+   * Pass transferable objects (ArrayBuffers) in `transfer` for zero-copy.
+   */
+  run(msg, transfer = []) {
+    return new Promise((resolve, reject) => {
+      const id = this._nextId++;
+      const w  = this._workers.find(w => w._idle);
+      if (w) this._dispatch(w, id, msg, transfer, resolve, reject);
+      else   this._queue.push({ id, msg, transfer, resolve, reject });
+    });
+  }
+
+  /** Terminate all workers immediately. */
+  terminate() { this._workers.forEach(w => w.terminate()); }
+}
+
 
 /**
  * Update a `.status-bar` element.

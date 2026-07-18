@@ -109,7 +109,7 @@
 </main>
 
 <script type="module">
-import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes, fmtDuration, setStatus, setupDropZone, showFileList, resetDropZone } from './common.js';
+import { readFileBytes, downloadBytes, replaceExt, fmtBytes, fmtDuration, setStatus, setupDropZone, showFileList, resetDropZone, WorkerPool } from './common.js';
 
 // ── State ────────────────────────────────────────────────────────
 let pendingFiles = []; // {file, name, relativePath}
@@ -179,69 +179,62 @@ document.getElementById('input-folder').addEventListener('change', e => ingestFi
 
 // ── Conversion ───────────────────────────────────────────────────
 window.convertAll = async function() {
-  const statusEl = document.getElementById('status-bar');
+  const statusEl  = document.getElementById('status-bar');
   const resultsEl = document.getElementById('results');
-  const showMeta = document.getElementById('opt-metadata').checked;
+  const showMeta  = document.getElementById('opt-metadata').checked;
 
   document.getElementById('btn-convert').disabled = true;
   resultsEl.innerHTML = '';
   results = [];
 
-  // Pre-load WASM
-  setStatus(statusEl, 'busy', 'Initialising WASM…');
-  let mod;
-  try { mod = await initWasm(); }
-  catch(e) {
-    setStatus(statusEl, 'failed', `WASM load failed: ${e.message}`);
-    document.getElementById('btn-convert').disabled = false;
-    return;
-  }
+  const workerCount = Math.min(pendingFiles.length, navigator.hardwareConcurrency || 4);
+  setStatus(statusEl, 'busy', `Starting ${workerCount} worker${workerCount > 1 ? 's' : ''}…`);
+  const pool = new WorkerPool(workerCount);
 
   let done = 0, failed = 0;
 
-  for (const item of pendingFiles) {
-    setStatus(statusEl, 'busy',
-      `Converting ${done + 1}/${pendingFiles.length}: ${item.name}`);
-
+  // Create all result cards upfront so order is stable
+  const cards = pendingFiles.map((item, i) => {
     const card = document.createElement('div');
     card.className = 'result-item pending';
-    card.id = `res-${done}`;
     card.innerHTML = `
       <div class="result-icon">⏳</div>
       <div class="result-body">
-        <div class="result-name">${item.name}</div>
-        <div class="result-sub">Converting…</div>
+        <div class="result-name">${esc(item.name)}</div>
+        <div class="result-sub">Queued…</div>
       </div>`;
     resultsEl.appendChild(card);
+    return card;
+  });
 
+  // Dispatch all files to the pool concurrently
+  const tasks = pendingFiles.map(async (item, i) => {
+    cards[i].querySelector('.result-sub').textContent = 'Converting…';
     try {
       const bytes = await readFileBytes(item.file);
-      const ncmResult = await mod.ncm_convert(bytes);
+      // Transfer the buffer — zero-copy into the worker
+      const r = await pool.run({ type: 'ncm', data: bytes.buffer }, [bytes.buffer]);
 
-      const fmt    = ncmResult.format;
-      const audio  = ncmResult.audio;
-      const cover  = ncmResult.cover;
-      const mime   = ncmResult.cover_mime;
-      const metaRaw = ncmResult.metadata_json;
-      const meta   = metaRaw ? JSON.parse(metaRaw) : null;
-
-      const outName = replaceExt(item.name, fmt);
+      const audio     = new Uint8Array(r.audio);
+      const cover     = new Uint8Array(r.cover);
+      const fmt       = r.format;
+      const metaRaw   = r.metadata_json;
+      const meta      = metaRaw ? JSON.parse(metaRaw) : null;
+      const outName   = replaceExt(item.name, fmt);
       const audioMime = fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
 
-      results.push({ name: outName, bytes: audio, mime: audioMime });
+      results[i] = { name: outName, bytes: audio, mime: audioMime };
 
       let metaHtml = '';
       if (showMeta && meta) {
         const coverHtml = cover.length
-          ? `<img class="meta-cover" src="${blobUrl(cover, mime)}" alt="cover" />`
+          ? `<img class="meta-cover" src="${blobUrl(cover, r.cover_mime)}" alt="cover" />`
           : `<div class="meta-cover-placeholder">🎵</div>`;
-
         const badges = [
-          meta.format ? `<span class="badge badge-format">${meta.format.toUpperCase()}</span>` : '',
+          meta.format  ? `<span class="badge badge-format">${meta.format.toUpperCase()}</span>` : '',
           meta.bitrate ? `<span class="badge badge-bitrate">${(meta.bitrate/1000).toFixed(0)} kbps</span>` : '',
-          meta.duration ? `<span class="badge badge-dur">${fmtDuration(meta.duration)}</span>` : '',
+          meta.duration? `<span class="badge badge-dur">${fmtDuration(meta.duration)}</span>` : '',
         ].filter(Boolean).join('');
-
         metaHtml = `
           <div class="meta-card">
             ${coverHtml}
@@ -254,38 +247,41 @@ window.convertAll = async function() {
           </div>`;
       }
 
-      card.className = 'result-item success';
-      card.innerHTML = `
+      cards[i].className = 'result-item success';
+      cards[i].innerHTML = `
         <div class="result-icon">✅</div>
         <div class="result-body">
-          <div class="result-name">${outName}</div>
+          <div class="result-name">${esc(outName)}</div>
           <div class="result-sub">${fmtBytes(audio.length)} · ${fmt.toUpperCase()}</div>
           ${metaHtml}
         </div>
         <div class="result-actions">
-          <button class="btn btn-ghost" onclick="dlOne(${results.length - 1})">⬇ Download</button>
+          <button class="btn btn-ghost" onclick="dlOne(${i})">⬇ Download</button>
         </div>`;
-
       done++;
     } catch(e) {
-      card.className = 'result-item error';
-      card.innerHTML = `
+      cards[i].className = 'result-item error';
+      cards[i].innerHTML = `
         <div class="result-icon">❌</div>
         <div class="result-body">
-          <div class="result-name">${item.name}</div>
+          <div class="result-name">${esc(item.name)}</div>
           <div class="result-sub">${esc(String(e))}</div>
         </div>`;
       failed++;
     }
-  }
+    const total = done + failed;
+    setStatus(statusEl, 'busy', `Converting… ${total}/${pendingFiles.length}`);
+  });
+
+  await Promise.all(tasks);
+  pool.terminate();
 
   const msg = failed
     ? `Done: ${done} converted, ${failed} failed`
     : `Done: ${done} file${done > 1 ? 's' : ''} converted`;
   setStatus(statusEl, failed ? 'failed' : 'done', msg);
-
   document.getElementById('btn-convert').disabled = false;
-  if (results.length > 1) document.getElementById('btn-download-all').style.display = '';
+  if (results.filter(Boolean).length > 1) document.getElementById('btn-download-all').style.display = '';
 };
 
 // ── Download helpers ──────────────────────────────────────────────

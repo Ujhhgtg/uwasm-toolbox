@@ -118,8 +118,8 @@
 </main>
 
 <script type="module">
-import { initWasm, wasm, readFileBytes, downloadBytes, replaceExt, fmtBytes,
-         setStatus, setupDropZone, showFileList, resetDropZone } from './common.js';
+import { readFileBytes, downloadBytes, replaceExt, fmtBytes,
+         setStatus, setupDropZone, showFileList, resetDropZone, WorkerPool } from './common.js';
 
 // ── State ──────────────────────────────────────────────────────────
 let pendingFiles  = [];
@@ -200,41 +200,43 @@ window.convertAll = async function() {
   resultsEl.innerHTML = '';
   outputResults = [];
 
-  setStatus(statusEl, 'busy', 'Initialising WASM…');
-  try { await initWasm(); }
-  catch(e) {
-    setStatus(statusEl, 'failed', `WASM load failed: ${e.message}`);
-    document.getElementById('btn-convert').disabled = false;
-    return;
-  }
+  const workerCount = Math.min(pendingFiles.length, navigator.hardwareConcurrency || 4);
+  setStatus(statusEl, 'busy', `Starting ${workerCount} worker${workerCount > 1 ? 's' : ''}…`);
+  const pool = new WorkerPool(workerCount);
 
   let done = 0, failed = 0;
 
-  for (const item of pendingFiles) {
-    setStatus(statusEl, 'busy',
-      `Converting ${done + failed + 1}/${pendingFiles.length}: ${item.name}`);
-
+  // Create all result cards upfront so order is stable
+  const cards = pendingFiles.map((item) => {
     const card = document.createElement('div');
     card.className = 'result-item pending';
     card.innerHTML = `
       <div class="result-icon">⏳</div>
       <div class="result-body">
         <div class="result-name">${esc(item.name)}</div>
-        <div class="result-sub">Rendering in Rust…</div>
+        <div class="result-sub">Queued…</div>
       </div>`;
     resultsEl.appendChild(card);
+    return card;
+  });
 
+  const tasks = pendingFiles.map(async (item, i) => {
+    cards[i].querySelector('.result-sub').textContent = 'Rendering in Rust…';
     try {
-      const bytes    = await readFileBytes(item.file);
-      const outBytes = wasm().tgs_convert(bytes, fps, width, height, maxFrames, frameStart, frameEnd, format);
+      const bytes = await readFileBytes(item.file);
+      const r = await pool.run({
+        type: 'tgs', data: bytes.buffer,
+        fps, width, height, maxFrames, frameStart, frameEnd, format,
+      }, [bytes.buffer]);
 
-      const outName = replaceExt(item.name, format);
-      const mime    = format === 'gif' ? 'image/gif' : 'image/webp';
-      outputResults.push({ name: outName, bytes: outBytes, mime });
+      const outBytes = new Uint8Array(r.output);
+      const outName  = replaceExt(item.name, format);
+      const mime     = format === 'gif' ? 'image/gif' : 'image/webp';
+      outputResults[i] = { name: outName, bytes: outBytes, mime };
 
       const previewUrl = URL.createObjectURL(new Blob([outBytes], { type: mime }));
-      card.className = 'result-item success';
-      card.innerHTML = `
+      cards[i].className = 'result-item success';
+      cards[i].innerHTML = `
         <div class="result-icon">✅</div>
         <div class="result-body">
           <div class="result-name">${esc(outName)}</div>
@@ -244,12 +246,12 @@ window.convertAll = async function() {
           </div>
         </div>
         <div class="result-actions">
-          <button class="btn btn-ghost" onclick="dlOne(${outputResults.length - 1})">⬇ Download</button>
+          <button class="btn btn-ghost" onclick="dlOne(${i})">⬇ Download</button>
         </div>`;
       done++;
     } catch(e) {
-      card.className = 'result-item error';
-      card.innerHTML = `
+      cards[i].className = 'result-item error';
+      cards[i].innerHTML = `
         <div class="result-icon">❌</div>
         <div class="result-body">
           <div class="result-name">${esc(item.name)}</div>
@@ -257,14 +259,19 @@ window.convertAll = async function() {
         </div>`;
       failed++;
     }
-  }
+    const total = done + failed;
+    setStatus(statusEl, 'busy', `Converting… ${total}/${pendingFiles.length}`);
+  });
+
+  await Promise.all(tasks);
+  pool.terminate();
 
   const msg = failed
     ? `Done: ${done} converted, ${failed} failed`
     : `Done: ${done} file${done > 1 ? 's' : ''} converted`;
   setStatus(statusEl, failed ? 'failed' : 'done', msg);
   document.getElementById('btn-convert').disabled = false;
-  if (outputResults.length > 1) document.getElementById('btn-dl-all').style.display = '';
+  if (outputResults.filter(Boolean).length > 1) document.getElementById('btn-dl-all').style.display = '';
 };
 
 window.dlOne = function(idx) {
