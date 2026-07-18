@@ -331,8 +331,34 @@ export class WorkerPool {
 }
 
 
+// ── Status-bar timer ─────────────────────────────────────────────
+
+let _timerEl    = null;  // element currently being timed
+let _timerStart = 0;     // Date.now() at conversion start
+let _timerId    = null;  // setInterval handle
+
+/** Format elapsed milliseconds as "0s", "45s", "1m 03s", etc. */
+function fmtElapsed(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+}
+
+function _stopTimer() {
+  if (_timerId !== null) { clearInterval(_timerId); _timerId = null; }
+  _timerEl = null;
+}
+
 /**
  * Update a `.status-bar` element.
+ *
+ * While `state === 'busy'` a live elapsed-time counter is shown on the
+ * right side of the bar.  The timer starts the first time `busy` is set
+ * on an element and keeps running through subsequent `busy` calls (which
+ * only update the progress message).  When the state changes to anything
+ * other than `busy` the timer stops and the final elapsed time is
+ * appended to the message.
+ *
  * @param {HTMLElement} el
  * @param {'idle'|'busy'|'done'|'failed'} state
  * @param {string} message
@@ -344,5 +370,27 @@ export function setStatus(el, state, message) {
     : state === 'done'   ? '✓'
     : state === 'failed' ? '✕'
     : '○';
-  el.innerHTML = `${spinner} <span>${message}</span>`;
+
+  if (state === 'busy') {
+    // Start a fresh timer when we first enter the busy state on this
+    // element; reuse it for subsequent progress updates.
+    if (_timerEl !== el) {
+      _stopTimer();
+      _timerStart = Date.now();
+      _timerEl    = el;
+      _timerId    = setInterval(() => {
+        // Re-query the span each tick — setStatus rewrites innerHTML on
+        // every progress update so we must not hold a stale reference.
+        const span = _timerEl && _timerEl.querySelector('.status-elapsed');
+        if (span) span.textContent = fmtElapsed(Date.now() - _timerStart);
+      }, 1000);
+    }
+    el.innerHTML = `${spinner} <span>${message}</span>`
+      + `<span class="status-elapsed">${fmtElapsed(Date.now() - _timerStart)}</span>`;
+  } else {
+    // Capture final elapsed before clearing the timer.
+    const elapsed = _timerId !== null ? ` · ${fmtElapsed(Date.now() - _timerStart)}` : '';
+    _stopTimer();
+    el.innerHTML = `${spinner} <span>${message}${elapsed}</span>`;
+  }
 }

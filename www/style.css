@@ -526,6 +526,11 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   animation: spin .7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+.status-elapsed {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  opacity: .65;
+}
 
 /* ── Misc ─────────────────────────────────────────────────────────── */
 .section-label {
