@@ -231,6 +231,22 @@
                         placeholder="e.g. 30-90"
                     />
                 </div>
+                <div class="ctrl">
+                    <label for="opt-workers"
+                        >Workers
+                        <span style="font-size: 0.75rem; font-weight: 400"
+                            >(0 = auto)</span
+                        ></label
+                    >
+                    <input
+                        type="number"
+                        id="opt-workers"
+                        value="0"
+                        min="0"
+                        max="0"
+                        step="1"
+                    />
+                </div>
             </div>
 
             <!-- ── Action ── -->
@@ -376,6 +392,15 @@
                 );
                 document.getElementById("btn-convert").disabled = false;
 
+                // Keep the workers input range in sync with the new file count.
+                const hwConcurrency = navigator.hardwareConcurrency || 4;
+                const workerInput = document.getElementById("opt-workers");
+                const newMax = Math.min(pendingFiles.length, hwConcurrency);
+                workerInput.max = newMax;
+                // Clamp only non-zero values; 0 means "auto" and is always valid.
+                const cur = parseInt(workerInput.value);
+                if (cur > newMax) workerInput.value = newMax;
+
                 if (activeZone && activeZone !== zoneEl)
                     resetDropZone(activeZone);
                 activeZone = zoneEl;
@@ -445,10 +470,12 @@
                 resultsEl.innerHTML = "";
                 outputResults = [];
 
-                const workerCount = Math.min(
-                    pendingFiles.length,
-                    navigator.hardwareConcurrency || 4
-                );
+                const workerCount = (() => {
+                    const hwMax = navigator.hardwareConcurrency || 4;
+                    const auto = Math.min(pendingFiles.length, hwMax);
+                    const manual = parseInt(document.getElementById("opt-workers").value) || 0;
+                    return manual > 0 ? Math.min(manual, auto) : auto;
+                })();
                 setStatus(
                     statusEl,
                     "busy",
